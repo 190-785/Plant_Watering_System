@@ -9,7 +9,7 @@ constexpr uint16_t WET_THRESHOLD = 420; // Stop pumping when moisture reaches 42
 unsigned long lastDisplayTime = 0;           // For 3-second display updates
 unsigned long lastPumpActionTime = 0;        // For pump cycle timing
 const unsigned long DISPLAY_INTERVAL = 3000; // 3 seconds in milliseconds
-const unsigned long PUMP_RUN_TIME = 1000;    // 2 second pump run time
+const unsigned long PUMP_RUN_TIME = 2000;    // 2 second pump run time
 const unsigned long PUMP_WAIT_TIME = 60000; // 2 minutes wait time (120 seconds)
 
 // Pump state variables
