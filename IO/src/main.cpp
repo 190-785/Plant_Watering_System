@@ -2,22 +2,22 @@
 
 constexpr uint8_t PUMP_CTRL_PIN = D1;   // ULN2003 IN1/O1
 constexpr uint8_t SENSOR_PIN = A0;      // Moisture sensor output
-constexpr uint16_t DRY_THRESHOLD = 520; // Start pumping when moisture reaches 520 (higher = drier)
-constexpr uint16_t WET_THRESHOLD = 420; // Stop pumping when moisture reaches 420 or below
+constexpr uint16_t DRY_THRESHOLD = 480; // Start pumping when moisture reaches 480 (higher = drier)
+constexpr uint16_t WET_THRESHOLD = 440; // Stop pumping when moisture reaches 440 or below
 
 // Timing variables
 unsigned long lastDisplayTime = 0;           // For 3-second display updates
 unsigned long lastPumpActionTime = 0;        // For pump cycle timing
 const unsigned long DISPLAY_INTERVAL = 3000; // 3 seconds in milliseconds
 const unsigned long PUMP_RUN_TIME = 2000;    // 2 second pump run time
-const unsigned long PUMP_WAIT_TIME = 60000; // 2 minutes wait time (120 seconds)
+const unsigned long PUMP_WAIT_TIME = 60000; // 1 minutes wait time (60 seconds)
 
 // Pump state variables
 enum PumpState
 {
-  MONITORING,   // Waiting for moisture to reach 520
+  MONITORING,   // Waiting for moisture to reach 480
   PUMP_RUNNING, // Pump is currently running
-  PUMP_WAITING  // Waiting 2 minutes before next check
+  PUMP_WAITING  // Waiting 1 minutes before next check
 };
 
 PumpState currentState = MONITORING;
