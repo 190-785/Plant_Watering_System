@@ -14,8 +14,8 @@ const char* CONFIG_FILE = "/config.json";
 // ===== Firebase Configuration ===== //
 // MODIFIED: Replace Google Sheets config with Firebase
 // You can hardcode these here, but the code will prioritize loading them from LittleFS.
-String firebaseHost = "plantirrigation-7645a-default-rtdb.firebaseio.com";
-String firebaseAuth = "hLzoN3QpQgq0SUOschDHWbVoyNMX9RNOPsehYql8";
+String firebaseHost = "plantirrigation-7645a-default-rtdb.firebaseio.com"; 
+String firebaseAuth = "hLzoN3QpQgq0SUOschDHWbVoyNMX9RNOPsehYql8"; //The key has been revoked
 
 // NEW: Firebase data objects
 FirebaseData firebaseData;
