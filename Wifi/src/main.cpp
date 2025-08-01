@@ -13,16 +13,18 @@ const char* CONFIG_FILE = "/config.json";
 // ===== Firestore Configuration ===== //
 // MODIFIED: Direct Firestore REST API integration for ESP8266
 // You can hardcode these here, but the code will prioritize loading them from LittleFS.
-String firebaseProjectId = "bloom-watch-d6878"; // Your Firebase project ID
-String firebaseApiKey = "AIzaSyCt74gYV9dmCm84lBK6RFBP4z7gLOrjjdo"; // Your Web API key from Firebase project settings
+String firebaseProjectId = "plantirrigation-7645a"; // Your Firebase project ID
+String firebaseApiKey = "AIzaSyAu1hcRbSuOvLNfAeyfIkQ2yuYbzp2OLEY"; // Your Web API key from Firebase project settings
 
 // Firestore REST API endpoint
 String firestoreEndpoint = "https://firestore.googleapis.com/v1/projects/" + firebaseProjectId + "/databases/(default)/documents/";
 
 // ===== Data Logging Configuration ===== //
 unsigned long lastDataSend = 0;
+unsigned long lastConfigCheck = 0;
 // MODIFIED: Increased send interval to 10 seconds for Firebase (can be adjusted)
 const unsigned long DATA_SEND_INTERVAL = 10000; // Send data every 10 seconds
+const unsigned long CONFIG_CHECK_INTERVAL = 30000; // Check for config updates every 30 seconds
 
 // ===== Web Server ===== //
 ESP8266WebServer server(80);
@@ -49,6 +51,9 @@ void checkWiFi();
 bool checkInternet();
 // MODIFIED: Replaced Google Sheets function with Firestore function
 void sendDataToFirestore(uint16_t moisture, const String& pumpStatus);
+void updateMainDeviceStatus(uint16_t moisture, const String& pumpStatus, const String& endpoint);
+void checkForConfigUpdates();
+void updateDeviceConfig(uint16_t dryThresh, uint16_t wetThresh, unsigned long pumpTime, unsigned long dataInterval, bool deviceEnabled, bool autoMode);
 void setupWebServer();
 void handleRoot();
 void handleGetStatus();
@@ -56,6 +61,7 @@ void handleSetThreshold();
 void handleSetPumpTime();
 // MODIFIED: Replaced Google Sheets test with Firestore test
 void handleTestFirestore();
+void handleResetConfig();
 
 // ===== Irrigation System Constants ===== // (unchanged)
 constexpr uint8_t PUMP_CTRL_PIN = D1;
@@ -139,6 +145,7 @@ bool loadConfig(String& ssid, String& pass, String& fbProjectId, String& fbApiKe
     Serial.println("=== Config file loaded ===");
     Serial.println("SSID: " + ssid);
     Serial.println("Firebase Project ID: " + fbProjectId); // MODIFIED
+    Serial.println("Firebase API Key: " + fbApiKey); // DEBUG
     Serial.println("Dry Threshold: " + String(dryThresh));
     Serial.println("==========================");
 
@@ -183,6 +190,7 @@ void startConfigurationPortal() {
     String pass = WiFi.psk();
     
     // Save credentials (including the hardcoded Firestore details for the first time)
+    Serial.println("Saving new config with Firebase credentials...");
     if (saveConfig(ssid, pass, firebaseProjectId, firebaseApiKey, 
                    DRY_THRESHOLD, WET_THRESHOLD, PUMP_RUN_TIME)) {
         Serial.println("Credentials saved to LittleFS");
@@ -202,22 +210,54 @@ void connectWiFi() {
     
     Serial.println("Attempting WiFi connection...");
     
+    // FORCE RESET: Delete old config file and recreate with hardcoded Firebase credentials
+    if (LittleFS.exists(CONFIG_FILE)) {
+        Serial.println("Deleting old config file to force reset...");
+        LittleFS.remove(CONFIG_FILE);
+    }
+    
     String ssid, pass, fbProjectId, fbApiKey; // MODIFIED - removed email/password
     uint16_t dryThresh, wetThresh;
     unsigned long pumpTime;
     
-    if (!loadConfig(ssid, pass, fbProjectId, fbApiKey, dryThresh, wetThresh, pumpTime)) { // MODIFIED
-        Serial.println("No saved credentials, starting portal");
+    // Check if config file exists and load it
+    bool configLoaded = loadConfig(ssid, pass, fbProjectId, fbApiKey, dryThresh, wetThresh, pumpTime);
+    
+    // If config doesn't exist or Firebase credentials are missing, recreate it
+    if (!configLoaded || fbProjectId.length() == 0 || fbApiKey.length() == 0) {
+        Serial.println("Config file missing or incomplete - starting configuration portal");
         startConfigurationPortal();
         return;
     }
     
     // Load saved parameters
-    if (fbProjectId.length() > 0) firebaseProjectId = fbProjectId;
-    if (fbApiKey.length() > 0) firebaseApiKey = fbApiKey;
+    if (fbProjectId.length() > 0) {
+        firebaseProjectId = fbProjectId;
+        Serial.println("Loaded Firebase Project ID from config: " + fbProjectId);
+    } else {
+        // Use hardcoded values if config file doesn't have them
+        Serial.println("Using hardcoded Firebase credentials - updating config file");
+        // Force save the hardcoded credentials to config file
+        saveConfig(ssid, pass, firebaseProjectId, firebaseApiKey, dryThresh, wetThresh, pumpTime);
+    }
+    if (fbApiKey.length() > 0) {
+        firebaseApiKey = fbApiKey;
+        Serial.println("Loaded Firebase API Key from config: " + fbApiKey.substring(0, 10) + "...");
+    }
     DRY_THRESHOLD = dryThresh;
     WET_THRESHOLD = wetThresh;
     PUMP_RUN_TIME = pumpTime;
+    
+    Serial.println("=== Final loaded values ===");
+    Serial.println("Firebase Project ID: " + firebaseProjectId);
+    Serial.println("Firebase API Key: " + firebaseApiKey.substring(0, 10) + "...");
+    Serial.println("===============================");
+    
+    // Debug output after loading
+    Serial.println("=== Final loaded values ===");
+    Serial.println("Firebase Project ID: " + firebaseProjectId);
+    Serial.println("Firebase API Key: " + firebaseApiKey);
+    Serial.println("===============================");
     
     // WiFi connection logic (unchanged)
     for (int attempt = 1; attempt <= MAX_CONNECTION_ATTEMPTS; attempt++) {
@@ -233,6 +273,12 @@ void connectWiFi() {
             Serial.println("\nConnected successfully!");
             Serial.println("IP Address: " + WiFi.localIP().toString());
             consecutiveFailures = 0;
+            
+            // Ensure Firebase credentials are saved to config
+            if (fbProjectId.length() == 0 || fbApiKey.length() == 0) {
+                Serial.println("Updating config file with Firebase credentials...");
+                saveConfig(ssid, pass, firebaseProjectId, firebaseApiKey, DRY_THRESHOLD, WET_THRESHOLD, PUMP_RUN_TIME);
+            }
             return;
         }
         Serial.printf("\nConnection failed (Attempt %d/%d)\n", attempt, MAX_CONNECTION_ATTEMPTS);
@@ -267,7 +313,7 @@ void checkWiFi() {
 }
 
 // ===== Firestore Integration ===== //
-// NEW: Direct Firestore REST API integration for ESP8266
+// MODIFIED: Send data to specific user's data sub-collection
 void sendDataToFirestore(uint16_t moisture, const String& pumpStatus) {
     if (!wifiConnected || firebaseProjectId.length() == 0 || firebaseApiKey.length() == 0) {
         Serial.println("Cannot send data: WiFi disconnected or Firestore not configured.");
@@ -277,26 +323,29 @@ void sendDataToFirestore(uint16_t moisture, const String& pumpStatus) {
     WiFiClientSecure client;
     HTTPClient https;
     
-    // Use fingerprint or disable certificate verification for simplicity
     client.setInsecure(); // For testing - in production, use proper certificate validation
     
     // Update Firestore endpoint with current project ID
     String currentFirestoreEndpoint = "https://firestore.googleapis.com/v1/projects/" + firebaseProjectId + "/databases/(default)/documents/";
     
-    // Create document path with timestamp
-    String documentPath = "irrigation_logs/" + String(millis());
-    String url = currentFirestoreEndpoint + documentPath + "?key=" + firebaseApiKey;
+    // MODIFIED: Store individual readings in the subcollection plantData/UWQKMJoSqSSNWVjnf1smQQQJSoB2/data
+    String readingId = String(millis()); // Use timestamp as reading ID
+    String subcollectionPath = "plantData/UWQKMJoSqSSNWVjnf1smQQQJSoB2/data";
+    String url = currentFirestoreEndpoint + subcollectionPath + "?documentId=" + readingId + "&key=" + firebaseApiKey;
     
-    Serial.printf("Firestore: Sending to %s... ", documentPath.c_str());
+    Serial.printf("Firestore: Sending reading to %s/%s... ", subcollectionPath.c_str(), readingId.c_str());
     
     if (https.begin(client, url)) {
         https.addHeader("Content-Type", "application/json");
         
-        // Prepare Firestore document JSON
+        // Prepare individual reading document
         JsonDocument doc;
         doc["fields"]["moisture"]["integerValue"] = String(moisture);
         doc["fields"]["pumpStatus"]["stringValue"] = pumpStatus;
-        doc["fields"]["timestamp"]["timestampValue"] = ""; // Firestore server timestamp
+        // FIXED: Use proper timestamp format or remove to let Firestore auto-generate
+        // doc["fields"]["timestamp"]["timestampValue"] = ""; // Firestore server timestamp
+        doc["fields"]["deviceId"]["stringValue"] = "ESP8266_001";
+        doc["fields"]["readingId"]["stringValue"] = readingId;
         
         String jsonString;
         serializeJson(doc, jsonString);
@@ -306,23 +355,8 @@ void sendDataToFirestore(uint16_t moisture, const String& pumpStatus) {
         if (httpResponseCode == 200 || httpResponseCode == 201) {
             Serial.println("✓ OK");
             
-            // Also update the latest status document
-            String latestUrl = currentFirestoreEndpoint + "status/latest?key=" + firebaseApiKey;
-            JsonDocument latestDoc;
-            latestDoc["fields"]["moisture"]["integerValue"] = String(moisture);
-            latestDoc["fields"]["pumpStatus"]["stringValue"] = pumpStatus;
-            latestDoc["fields"]["lastUpdated"]["timestampValue"] = "";
-            
-            String latestJsonString;
-            serializeJson(latestDoc, latestJsonString);
-            
-            // Use PATCH to update or create the latest status document
-            HTTPClient httpsLatest;
-            if (httpsLatest.begin(client, latestUrl)) {
-                httpsLatest.addHeader("Content-Type", "application/json");
-                httpsLatest.PATCH(latestJsonString);
-                httpsLatest.end();
-            }
+            // Also update the main user device status document
+            updateMainDeviceStatus(moisture, pumpStatus, currentFirestoreEndpoint);
             
         } else {
             Serial.println("✗ FAILED");
@@ -339,6 +373,161 @@ void sendDataToFirestore(uint16_t moisture, const String& pumpStatus) {
     }
 }
 
+// Helper function to update main device status
+void updateMainDeviceStatus(uint16_t moisture, const String& pumpStatus, const String& endpoint) {
+    WiFiClientSecure client;
+    HTTPClient https;
+    client.setInsecure();
+    
+    // Update the main user document (not in subcollection)
+    String userDocPath = "plantData/UWQKMJoSqSSNWVjnf1smQQQJSoB2";
+    String statusUrl = endpoint + userDocPath + "?key=" + firebaseApiKey;
+    
+    Serial.printf("Firestore: Updating main status... ");
+    
+    if (https.begin(client, statusUrl)) {
+        https.addHeader("Content-Type", "application/json");
+        
+        JsonDocument statusDoc;
+        statusDoc["fields"]["currentMoisture"]["integerValue"] = String(moisture);
+        statusDoc["fields"]["currentPumpStatus"]["stringValue"] = pumpStatus;
+        // FIXED: Use proper timestamp format or remove to let Firestore auto-generate
+        // statusDoc["fields"]["lastUpdated"]["timestampValue"] = "";
+        statusDoc["fields"]["deviceId"]["stringValue"] = "ESP8266_001";
+        statusDoc["fields"]["deviceName"]["stringValue"] = "Plant Irrigation System";
+        statusDoc["fields"]["totalReadings"]["integerValue"] = String(millis() / 10000); // Approximate reading count
+        
+        String statusJsonString;
+        serializeJson(statusDoc, statusJsonString);
+        
+        int statusResponse = https.PATCH(statusJsonString);
+        
+        if (statusResponse == 200 || statusResponse == 201) {
+            Serial.println("✓ Status OK");
+        } else {
+            Serial.println("✗ Status FAILED");
+        }
+        
+        https.end();
+    }
+}
+
+// Function to check for configuration updates from Firestore
+void checkForConfigUpdates() {
+    if (!wifiConnected || firebaseProjectId.length() == 0 || firebaseApiKey.length() == 0) {
+        return;
+    }
+
+    WiFiClientSecure client;
+    HTTPClient https;
+    client.setInsecure();
+    
+    // Check for config updates in the config subcollection
+    String configPath = "plantData/UWQKMJoSqSSNWVjnf1smQQQJSoB2/config/DeviceConfig";
+    String configUrl = "https://firestore.googleapis.com/v1/projects/" + firebaseProjectId + "/databases/(default)/documents/" + configPath + "?key=" + firebaseApiKey;
+    
+    Serial.print("Checking for config updates... ");
+    
+    if (https.begin(client, configUrl)) {
+        int httpResponseCode = https.GET();
+        
+        if (httpResponseCode == 200) {
+            String response = https.getString();
+            
+            // Parse the JSON response
+            JsonDocument doc;
+            DeserializationError error = deserializeJson(doc, response);
+            
+            if (!error && doc.containsKey("fields")) {
+                // Extract configuration values with defaults
+                uint16_t newDryThresh = DRY_THRESHOLD;
+                uint16_t newWetThresh = WET_THRESHOLD;
+                unsigned long newPumpTime = PUMP_RUN_TIME;
+                unsigned long newDataInterval = DATA_SEND_INTERVAL;
+                bool deviceEnabled = true;
+                bool autoMode = true;
+                bool configChanged = false;
+                
+                // Parse dryThreshold
+                if (doc["fields"]["dryThreshold"]["integerValue"]) {
+                    newDryThresh = doc["fields"]["dryThreshold"]["integerValue"].as<int>();
+                    if (newDryThresh != DRY_THRESHOLD) configChanged = true;
+                }
+                
+                // Parse wetThreshold
+                if (doc["fields"]["wetThreshold"]["integerValue"]) {
+                    newWetThresh = doc["fields"]["wetThreshold"]["integerValue"].as<int>();
+                    if (newWetThresh != WET_THRESHOLD) configChanged = true;
+                }
+                
+                // Parse pumpRunTime
+                if (doc["fields"]["pumpRunTime"]["integerValue"]) {
+                    newPumpTime = doc["fields"]["pumpRunTime"]["integerValue"].as<long>();
+                    if (newPumpTime != PUMP_RUN_TIME) configChanged = true;
+                }
+                
+                // Parse dataSendInterval
+                if (doc["fields"]["dataSendInterval"]["integerValue"]) {
+                    newDataInterval = doc["fields"]["dataSendInterval"]["integerValue"].as<long>();
+                    if (newDataInterval != DATA_SEND_INTERVAL) configChanged = true;
+                }
+                
+                // Parse deviceEnabled
+                if (doc["fields"]["deviceEnabled"]["booleanValue"].is<bool>()) {
+                    deviceEnabled = doc["fields"]["deviceEnabled"]["booleanValue"].as<bool>();
+                }
+                
+                // Parse autoMode
+                if (doc["fields"]["autoMode"]["booleanValue"].is<bool>()) {
+                    autoMode = doc["fields"]["autoMode"]["booleanValue"].as<bool>();
+                }
+                
+                if (configChanged) {
+                    Serial.println("✓ Config updated from app!");
+                    updateDeviceConfig(newDryThresh, newWetThresh, newPumpTime, newDataInterval, deviceEnabled, autoMode);
+                } else {
+                    Serial.println("✓ No changes");
+                }
+            } else {
+                Serial.println("✓ No config found");
+            }
+        } else if (httpResponseCode == 404) {
+            Serial.println("✓ No config document");
+        } else {
+            Serial.printf("✗ Failed (%d)\n", httpResponseCode);
+        }
+        
+        https.end();
+    }
+}
+
+// Function to update device configuration
+void updateDeviceConfig(uint16_t dryThresh, uint16_t wetThresh, unsigned long pumpTime, unsigned long dataInterval, bool deviceEnabled, bool autoMode) {
+    DRY_THRESHOLD = dryThresh;
+    WET_THRESHOLD = wetThresh;
+    PUMP_RUN_TIME = pumpTime;
+    // Note: DATA_SEND_INTERVAL is const, so we log it but don't change it
+    
+    Serial.printf("Config updated: Dry=%d, Wet=%d, PumpTime=%lu, DataInterval=%lu, Enabled=%s, Auto=%s\n", 
+                  dryThresh, wetThresh, pumpTime, dataInterval, 
+                  deviceEnabled ? "true" : "false", autoMode ? "true" : "false");
+    
+    if (dataInterval != DATA_SEND_INTERVAL) {
+        Serial.printf("Note: DataInterval change requires firmware update (current=%lu, requested=%lu)\n", 
+                      DATA_SEND_INTERVAL, dataInterval);
+    }
+    
+    // Save to local config file
+    String ssid, pass, fbProjectId, fbApiKey;
+    uint16_t oldDry, oldWet;
+    unsigned long oldPump;
+    
+    if (loadConfig(ssid, pass, fbProjectId, fbApiKey, oldDry, oldWet, oldPump)) {
+        saveConfig(ssid, pass, fbProjectId, fbApiKey, DRY_THRESHOLD, WET_THRESHOLD, PUMP_RUN_TIME);
+        Serial.println("Config saved to local storage");
+    }
+}
+
 // ===== Web Server Functions ===== //
 void setupWebServer() {
     server.on("/", handleRoot);
@@ -346,7 +535,9 @@ void setupWebServer() {
     server.on("/setThreshold", HTTP_POST, handleSetThreshold);
     server.on("/setPumpTime", HTTP_POST, handleSetPumpTime);
     // MODIFIED: Test endpoint for Firestore
-    server.on("/testFirestore", HTTP_GET, handleTestFirestore); 
+    server.on("/testFirestore", HTTP_GET, handleTestFirestore);
+    // NEW: Reset configuration endpoint
+    server.on("/resetConfig", HTTP_GET, handleResetConfig); 
     
     server.onNotFound([]() {
         if (server.method() == HTTP_OPTIONS) {
@@ -369,10 +560,16 @@ void handleRoot() {
     html += "<h1>Smart Irrigation System v2.0</h1>";
     html += "<h2>Current Status</h2>";
     html += "<p>Moisture Level: " + String(analogRead(SENSOR_PIN)) + "</p>";
-    // MODIFIED: Show Firestore status instead of Google Sheets
+    // MODIFIED: Show Firestore status with specific user path
     html += "<p>Data Logging: ";
     html += (firebaseProjectId.length() > 0 ? "Firestore Enabled" : "Disabled");
     html += "</p>";
+    html += "<p>Data Path: plantData/UWQKMJoSqSSNWVjnf1smQQQJSoB2/data</p>";
+    html += "<p>Config Path: plantData/UWQKMJoSqSSNWVjnf1smQQQJSoB2/config/DeviceConfig</p>";
+    html += "<p>Device ID: ESP8266_001</p>";
+    html += "<h3>Actions</h3>";
+    html += "<p><a href='/testFirestore'>Test Firestore</a></p>";
+    html += "<p><a href='/resetConfig' onclick='return confirm(\"Are you sure? This will restart the device.\")'>Reset Configuration</a></p>";
     html += "</body></html>";
     server.send(200, "text/html", html);
 }
@@ -443,6 +640,26 @@ void handleTestFirestore() {
     server.send(200, "application/json", "{\"status\":\"success\",\"message\":\"Test sent to Firestore\"}");
 }
 
+// NEW: Reset configuration function
+void handleResetConfig() {
+    server.sendHeader("Access-Control-Allow-Origin", "*");
+    Serial.println("Configuration reset requested via web");
+    
+    // Delete config file
+    if (LittleFS.exists(CONFIG_FILE)) {
+        LittleFS.remove(CONFIG_FILE);
+        Serial.println("Configuration file deleted");
+    }
+    
+    // Clear WiFi credentials
+    WiFi.disconnect(true);
+    
+    server.send(200, "application/json", "{\"status\":\"success\",\"message\":\"Configuration reset. Device will restart.\"}");
+    
+    delay(1000);
+    ESP.restart(); // Restart to reload configuration
+}
+
 // ===== Core Irrigation Logic ===== //
 void setup() {
     Serial.begin(115200);
@@ -465,6 +682,7 @@ void setup() {
     setupWebServer();
     
     Serial.println("Final Firebase Project ID: " + firebaseProjectId);
+    Serial.println("Data path: plantData/UWQKMJoSqSSNWVjnf1smQQQJSoB2/data");
     Serial.println("Data sent to Firestore every " + String(DATA_SEND_INTERVAL / 1000) + " seconds");
 }
 
@@ -473,6 +691,12 @@ void loop() {
     
     server.handleClient();
     checkWiFi();
+    
+    // Block for checking configuration updates from app every 30 seconds
+    if (currentTime - lastConfigCheck >= CONFIG_CHECK_INTERVAL) {
+        checkForConfigUpdates();
+        lastConfigCheck = currentTime;
+    }
     
     // Block for sending data to Firebase every 10 seconds
     if (currentTime - lastDataSend >= DATA_SEND_INTERVAL) {
