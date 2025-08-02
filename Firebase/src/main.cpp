@@ -16,7 +16,7 @@ const String DEVICE_TYPE = "plant-watering-system";
 // ===== FIREBASE CONFIGURATION ===== //
 #define FIREBASE_PROJECT_ID "bloom-watch-d6878"
 // You'll need to get this from Firebase Console -> Project Settings -> Web API Key
-#define FIREBASE_API_KEY "your-web-api-key-here"
+#define FIREBASE_API_KEY "AIzaSyCt74gYV9dmCm84lBK6RFBP4z7gLOrjjdo"
 
 const String FIRESTORE_URL = "https://firestore.googleapis.com/v1/projects/" + String(FIREBASE_PROJECT_ID) + "/databases/(default)/documents";
 
