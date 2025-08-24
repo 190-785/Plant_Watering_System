@@ -3,17 +3,23 @@
 #include <ESP8266WiFi.h>
 #include <LittleFS.h>
 #include <ArduinoJson.h>
+#include <ESP8266WebServer.h>
 #include <ESP8266HTTPClient.h>
 #include <WiFiClientSecure.h>
-#include <ESP8266WebServer.h>
 
 // ===== File System Configuration ===== //
 const char* CONFIG_FILE = "/config.json";
 
-// ===== Google Sheets Configuration ===== //
-String googleScriptURL = "https://script.google.com/macros/s/AKfycbxLn8vDw9lEkvFkB8ydj70U-rb3WeLXx3-dZnO5796gHlErpX6tEUbVKlyt5VhsjpcTCw/exec"; // Hardcoded - replace with your actual URL
+// ===== Firestore Configuration ===== //
+String firebaseProjectId = "plantirrigation-7645a"; // Your Firebase project ID
+String firebaseApiKey = "AIzaSyAu1hcRbSuOvLNfAeyfIkQ2yuYbzp2OLEY"; // Your Web API key from Firebase project settings
+String firestoreEndpoint = "https://firestore.googleapis.com/v1/projects/" + firebaseProjectId + "/databases/(default)/documents/";
+
+// ===== Data Logging Configuration ===== //
 unsigned long lastDataSend = 0;
-const unsigned long DATA_SEND_INTERVAL = 6000; // Send data every 1 minute
+unsigned long lastConfigCheck = 0;
+const unsigned long DATA_SEND_INTERVAL = 10000; // Send data every 10 seconds
+const unsigned long CONFIG_CHECK_INTERVAL = 30000; // Check for config updates every 30 seconds
 
 // ===== Web Server ===== //
 ESP8266WebServer server(80);
@@ -21,182 +27,170 @@ ESP8266WebServer server(80);
 // WiFiManager instance
 WiFiManager wm;
 
-// Custom parameters removed - simplified WiFi authentication
-
 // WiFi state tracking
 bool wifiConnected = false;
-const int MAX_CONNECTION_ATTEMPTS = 3; // Reduced from 5
+const int MAX_CONNECTION_ATTEMPTS = 3;
 unsigned long lastReconnectAttempt = 0;
-const unsigned long RECONNECT_INTERVAL = 10000; // Increased to 10 seconds
+const unsigned long RECONNECT_INTERVAL = 10000;
 unsigned long lastWiFiCheck = 0;
-const unsigned long WIFI_CHECK_INTERVAL = 5000; // Check WiFi status every 5 seconds
+const unsigned long WIFI_CHECK_INTERVAL = 5000;
 unsigned long lastInternetCheck = 0;
-const unsigned long INTERNET_CHECK_INTERVAL = 300000; // Check internet every 5 minutes (reduced frequency)
+const unsigned long INTERNET_CHECK_INTERVAL = 300000;
 int consecutiveFailures = 0;
 const int MAX_CONSECUTIVE_FAILURES = 3;
+
+// ===== Irrigation System Constants ===== //
+constexpr uint8_t PUMP_CTRL_PIN = D1;
+constexpr uint8_t SENSOR_PIN = A0;
+// NEW: Define pins for the button and LED
+constexpr uint8_t BUTTON_PIN = D2;
+constexpr uint8_t LED_PIN = D3;
+
+uint16_t DRY_THRESHOLD = 520;
+uint16_t WET_THRESHOLD = 420;
+
+// Timing variables
+unsigned long lastDisplayTime = 0;
+unsigned long lastPumpActionTime = 0;
+const unsigned long DISPLAY_INTERVAL = 3000;
+unsigned long PUMP_RUN_TIME = 2000;
+const unsigned long PUMP_WAIT_TIME = 60000;
+
+// Pump state variables
+enum PumpState { MONITORING, PUMP_RUNNING, PUMP_WAITING, MANUAL_PUMPING }; // NEW: Added MANUAL_PUMPING state
+PumpState currentState = MONITORING;
+unsigned long pumpStartTime = 0;
+
+// NEW: Button state tracking
+bool buttonPressed = false;
+unsigned long lastButtonCheck = 0;
+const unsigned long DEBOUNCE_DELAY = 50;
+
+// NEW: LED state tracking
+unsigned long lastBlinkTime = 0;
+bool ledState = LOW;
 
 // Function declarations
 void startConfigurationPortal();
 void connectWiFi();
 void checkWiFi();
 bool checkInternet();
-void sendDataToGoogleSheets(uint16_t moisture, const String& pumpStatus);
+void sendDataToFirestore(uint16_t moisture, const String& pumpStatus);
+void updateMainDeviceStatus(uint16_t moisture, const String& pumpStatus, const String& endpoint);
+void checkForConfigUpdates();
+void updateDeviceConfig(uint16_t dryThresh, uint16_t wetThresh, unsigned long pumpTime, unsigned long dataInterval, bool deviceEnabled, bool autoMode);
 void setupWebServer();
 void handleRoot();
 void handleGetStatus();
 void handleSetThreshold();
 void handleSetPumpTime();
-void handleTestGoogleSheets();
-
-// ===== Irrigation System Constants ===== //
-constexpr uint8_t PUMP_CTRL_PIN = D1;
-constexpr uint8_t SENSOR_PIN = A0;
-uint16_t DRY_THRESHOLD = 520;    // Changed to variable for app control
-uint16_t WET_THRESHOLD = 420;    // Changed to variable for app control
-
-// Timing variables
-unsigned long lastDisplayTime = 0;
-unsigned long lastPumpActionTime = 0;
-const unsigned long DISPLAY_INTERVAL = 3000;
-unsigned long PUMP_RUN_TIME = 2000;      // Changed to variable for app control
-const unsigned long PUMP_WAIT_TIME = 60000;
-
-// Pump state variables
-enum PumpState { MONITORING, PUMP_RUNNING, PUMP_WAITING };
-PumpState currentState = MONITORING;
-unsigned long pumpStartTime = 0;
+void handleTestFirestore();
+void handleResetConfig();
+// NEW: Function to handle LED status
+void updateLedStatus();
+// NEW: Offline-first helpers
+void runWateringLogic();
+void handleWiFi();
 
 // ===== File System Functions ===== //
-bool saveConfig(const String& ssid, const String& pass, const String& gurl = "", 
+bool saveConfig(const String& ssid, const String& pass, const String& fbProjectId = "", const String& fbApiKey = "",
                 uint16_t dryThresh = 520, uint16_t wetThresh = 420, unsigned long pumpTime = 2000) {
-  File configFile = LittleFS.open(CONFIG_FILE, "w");
-  if (!configFile) {
-    Serial.println("Failed to open config file for writing");
-    return false;
-  }
+    File configFile = LittleFS.open(CONFIG_FILE, "w");
+    if (!configFile) {
+        Serial.println("Failed to open config file for writing");
+        return false;
+    }
 
-  JsonDocument doc;
-  doc["ssid"] = ssid;
-  doc["pass"] = pass;
-  doc["gurl"] = gurl;
-  doc["dryThreshold"] = dryThresh;
-  doc["wetThreshold"] = wetThresh;
-  doc["pumpRunTime"] = pumpTime;
+    JsonDocument doc;
+    doc["ssid"] = ssid;
+    doc["pass"] = pass;
+    doc["firebaseProjectId"] = fbProjectId;
+    doc["firebaseApiKey"] = fbApiKey;
+    doc["dryThreshold"] = dryThresh;
+    doc["wetThreshold"] = wetThresh;
+    doc["pumpRunTime"] = pumpTime;
 
-  if (serializeJson(doc, configFile) == 0) {
-    Serial.println("Failed to write to config file");
+    if (serializeJson(doc, configFile) == 0) {
+        Serial.println("Failed to write to config file");
+        configFile.close();
+        return false;
+    }
+
     configFile.close();
-    return false;
-  }
-
-  configFile.close();
-  return true;
+    return true;
 }
 
-bool loadConfig(String& ssid, String& pass, String& gurl, 
+bool loadConfig(String& ssid, String& pass, String& fbProjectId, String& fbApiKey,
                 uint16_t& dryThresh, uint16_t& wetThresh, unsigned long& pumpTime) {
-  if (!LittleFS.exists(CONFIG_FILE)) {
-    Serial.println("No config file found");
-    return false;
-  }
+    if (!LittleFS.exists(CONFIG_FILE)) {
+        Serial.println("No config file found");
+        return false;
+    }
 
-  File configFile = LittleFS.open(CONFIG_FILE, "r");
-  if (!configFile) {
-    Serial.println("Failed to open config file");
-    return false;
-  }
+    File configFile = LittleFS.open(CONFIG_FILE, "r");
+    if (!configFile) {
+        Serial.println("Failed to open config file");
+        return false;
+    }
 
-  size_t size = configFile.size();
-  if (size > 1024) {
-    Serial.println("Config file size is too large");
-    return false;
-  }
+    JsonDocument doc;
+    DeserializationError error = deserializeJson(doc, configFile);
+    if (error) {
+        Serial.print("JSON deserialization failed: ");
+        Serial.println(error.c_str());
+        configFile.close();
+        return false;
+    }
 
-  JsonDocument doc;
-  DeserializationError error = deserializeJson(doc, configFile);
-  if (error) {
-    Serial.print("JSON deserialization failed: ");
-    Serial.println(error.c_str());
+    ssid = doc["ssid"].as<String>();
+    pass = doc["pass"].as<String>();
+    fbProjectId = doc["firebaseProjectId"].as<String>();
+    fbApiKey = doc["firebaseApiKey"].as<String>();
+    dryThresh = doc["dryThreshold"] | 520;
+    wetThresh = doc["wetThreshold"] | 420;
+    pumpTime = doc["pumpRunTime"] | 2000;
+
     configFile.close();
-    return false;
-  }
-
-  ssid = doc["ssid"].as<String>();
-  pass = doc["pass"].as<String>();
-  gurl = doc["gurl"].as<String>();
-  dryThresh = doc["dryThreshold"] | 520;  // Default to 520 if not found
-  wetThresh = doc["wetThreshold"] | 420;  // Default to 420 if not found
-  pumpTime = doc["pumpRunTime"] | 2000;   // Default to 2000ms if not found
-
-  // Debug output
-  Serial.println("=== Config file loaded ===");
-  Serial.println("SSID: " + ssid);
-  Serial.println("Google URL from file: '" + gurl + "' (length: " + String(gurl.length()) + ")");
-  Serial.println("Dry Threshold: " + String(dryThresh));
-  Serial.println("Wet Threshold: " + String(wetThresh));
-  Serial.println("Pump Time: " + String(pumpTime));
-  Serial.println("==========================");
-
-  configFile.close();
-  return true;
+    return true;
 }
+
 
 // ===== WiFi Functions ===== //
-
 void setupWiFi() {
-    // Initialize LittleFS
     if (!LittleFS.begin()) {
         Serial.println("Failed to mount file system");
     }
     
-    // Enhanced WiFi settings for stability
     WiFi.mode(WIFI_STA);
     WiFi.setSleepMode(WIFI_NONE_SLEEP);
-    WiFi.setAutoReconnect(true); // Enable auto-reconnect
-    WiFi.persistent(true); // Enable persistent storage
-    WiFi.setAutoConnect(true); // Enable auto-connect
+    WiFi.setAutoReconnect(true);
+    WiFi.persistent(true);
     
-    // Set power management
-    WiFi.setOutputPower(20.5); // Maximum power for better signal
-    
-    wm.setConnectTimeout(30); // Increased timeout
-    wm.setConfigPortalTimeout(0);
+    wm.setConnectTimeout(30);
+    wm.setConfigPortalTimeout(180);
 }
 
 void startConfigurationPortal() {
     Serial.println("Starting configuration portal...");
     
-    // Completely disconnect and clear any existing WiFi settings
     WiFi.disconnect(true);
-    WiFi.mode(WIFI_OFF);
-    delay(2000); // Increased delay
-    
-    // Reset WiFiManager settings
-    wm.resetSettings();
-    
-    // Configure WiFiManager for stable AP mode
-    wm.setConfigPortalTimeout(0);
-    wm.setConnectTimeout(30);
-    wm.setDebugOutput(false); // Reduced debug output
-    wm.setAPStaticIPConfig(IPAddress(192,168,4,1), IPAddress(192,168,4,1), IPAddress(255,255,255,0));
-    
-    Serial.println("Starting access point: IrrigationAP");
-    Serial.println("Password: plant123456");
-    Serial.println("IP: 192.168.4.1");
-    Serial.println("Connect to this network and go to http://192.168.4.1");
+    delay(1000);
     
     if (!wm.startConfigPortal("IrrigationAP", "plant123456")) {
-        Serial.println("Failed to start config portal");
+        Serial.println("Failed to connect and hit timeout");
+        ESP.restart();
         return;
     }
     
     String ssid = WiFi.SSID();
     String pass = WiFi.psk();
     
-    if (saveConfig(ssid, pass, googleScriptURL, DRY_THRESHOLD, WET_THRESHOLD, PUMP_RUN_TIME)) {
+    Serial.println("Saving new config with Firebase credentials...");
+    if (saveConfig(ssid, pass, firebaseProjectId, firebaseApiKey, 
+                   DRY_THRESHOLD, WET_THRESHOLD, PUMP_RUN_TIME)) {
         Serial.println("Credentials saved to LittleFS");
         wifiConnected = true;
-        consecutiveFailures = 0; // Reset failure counter
+        consecutiveFailures = 0;
     } else {
         Serial.println("Failed to save credentials");
     }
@@ -211,276 +205,237 @@ void connectWiFi() {
     
     Serial.println("Attempting WiFi connection...");
     
-    String ssid, pass, gurl;
+    if (LittleFS.exists(CONFIG_FILE)) {
+        Serial.println("Deleting old config file to force reset...");
+        LittleFS.remove(CONFIG_FILE);
+    }
+    
+    String ssid, pass, fbProjectId, fbApiKey;
     uint16_t dryThresh, wetThresh;
     unsigned long pumpTime;
     
-    if (!loadConfig(ssid, pass, gurl, dryThresh, wetThresh, pumpTime)) {
-        Serial.println("No saved credentials, starting portal");
+    bool configLoaded = loadConfig(ssid, pass, fbProjectId, fbApiKey, dryThresh, wetThresh, pumpTime);
+    
+    if (!configLoaded || fbProjectId.length() == 0 || fbApiKey.length() == 0) {
+        Serial.println("Config file missing or incomplete - starting configuration portal");
         startConfigurationPortal();
         return;
     }
     
-    // Load saved parameters with debugging
-    Serial.println("Loaded configuration:");
-    Serial.println("  SSID: " + ssid);
-    Serial.println("  Google URL: " + gurl);
-    Serial.println("  Dry Threshold: " + String(dryThresh));
-    Serial.println("  Wet Threshold: " + String(wetThresh));
-    Serial.println("  Pump Time: " + String(pumpTime));
-    
-    if (gurl.length() > 0) {
-        googleScriptURL = gurl;
-        Serial.println("Google Script URL updated from config: " + googleScriptURL);
+    if (fbProjectId.length() > 0) {
+        firebaseProjectId = fbProjectId;
     } else {
-        Serial.println("No Google Script URL in config, using default: " + googleScriptURL);
+        saveConfig(ssid, pass, firebaseProjectId, firebaseApiKey, dryThresh, wetThresh, pumpTime);
+    }
+    if (fbApiKey.length() > 0) {
+        firebaseApiKey = fbApiKey;
     }
     DRY_THRESHOLD = dryThresh;
     WET_THRESHOLD = wetThresh;
     PUMP_RUN_TIME = pumpTime;
-    
+
     for (int attempt = 1; attempt <= MAX_CONNECTION_ATTEMPTS; attempt++) {
         Serial.printf("Connection attempt %d/%d\n", attempt, MAX_CONNECTION_ATTEMPTS);
-        
         WiFi.begin(ssid.c_str(), pass.c_str());
-        
         unsigned long startTime = millis();
         while (WiFi.status() != WL_CONNECTED && millis() - startTime < 30000) {
             delay(500);
             Serial.print(".");
         }
         wifiConnected = (WiFi.status() == WL_CONNECTED);
-        
         if (wifiConnected) {
             Serial.println("\nConnected successfully!");
-            Serial.print("SSID: ");
-            Serial.println(WiFi.SSID());
-            Serial.print("IP Address: ");
-            Serial.println(WiFi.localIP());
-            Serial.print("Signal Strength (RSSI): ");
-            Serial.println(WiFi.RSSI());
-
-            consecutiveFailures = 0; // Reset failure counter
+            Serial.println("IP Address: " + WiFi.localIP().toString());
+            consecutiveFailures = 0;
             
-            if (!checkInternet()) {
-                Serial.println("WiFi connected, but no internet access.");
-                consecutiveFailures++;
-            } else {
-                Serial.println("Internet access confirmed.");
+            if (fbProjectId.length() == 0 || fbApiKey.length() == 0) {
+                Serial.println("Updating config file with Firebase credentials...");
+                saveConfig(ssid, pass, firebaseProjectId, firebaseApiKey, DRY_THRESHOLD, WET_THRESHOLD, PUMP_RUN_TIME);
             }
             return;
         }
-        
         Serial.printf("\nConnection failed (Attempt %d/%d)\n", attempt, MAX_CONNECTION_ATTEMPTS);
-        delay(2000); // Increased delay between attempts
+        delay(2000);
     }
     
     Serial.println("All connection attempts failed");
     consecutiveFailures++;
-    
-    if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-        startConfigurationPortal();
-    }
 }
 
 void checkWiFi() {
     unsigned long currentTime = millis();
-    
-    // Only check WiFi status at intervals to reduce overhead
-    if (currentTime - lastWiFiCheck < WIFI_CHECK_INTERVAL) {
-        return;
-    }
+    if (currentTime - lastWiFiCheck < WIFI_CHECK_INTERVAL) return;
     lastWiFiCheck = currentTime;
     
-    wl_status_t status = WiFi.status();
-    
-    if (status != WL_CONNECTED) {
+    if (WiFi.status() != WL_CONNECTED) {
         if (wifiConnected) {
-            Serial.printf("WiFi connection lost - Status: %d\n", status);
-            Serial.print("Signal Strength was: ");
-            Serial.println(WiFi.RSSI());
+            Serial.printf("WiFi connection lost - Status: %d\n", WiFi.status());
             wifiConnected = false;
         }
-        
         if (currentTime - lastReconnectAttempt > RECONNECT_INTERVAL) {
             Serial.println("Attempting reconnection...");
             lastReconnectAttempt = currentTime;
-            
-            // Try a simple reconnect first
             WiFi.reconnect();
-            delay(5000);
-            
-            if (WiFi.status() != WL_CONNECTED) {
-                connectWiFi();
-            }
         }
-    } else {
-        if (!wifiConnected) {
-            Serial.println("WiFi reconnected successfully");
-            wifiConnected = true;
-        }
-        
-        // Periodic internet check (every 5 minutes - reduced frequency)
-        if (currentTime - lastInternetCheck > INTERNET_CHECK_INTERVAL) {
-            lastInternetCheck = currentTime;
-            Serial.println("Checking internet connectivity...");
-            if (!checkInternet()) {
-                Serial.println("Internet connection lost. Starting configuration portal.");
-                startConfigurationPortal(); // Force re-configuration
-            }
-        }
+    } else if (!wifiConnected) {
+        Serial.println("WiFi reconnected successfully");
+        wifiConnected = true;
     }
 }
 
-bool checkInternet() {
-    if (WiFi.status() != WL_CONNECTED) {
-        return false;
+// ===== Firestore Integration ===== //
+void sendDataToFirestore(uint16_t moisture, const String& pumpStatus) {
+    if (!wifiConnected || firebaseProjectId.length() == 0 || firebaseApiKey.length() == 0) {
+        Serial.println("Cannot send data: WiFi disconnected or Firestore not configured.");
+        return;
     }
-    
-    WiFiClient client;
-    client.setTimeout(5000); // 5 second timeout
-    
-    // Try multiple DNS servers for better reliability
-    IPAddress dnsServers[] = {
-        IPAddress(8, 8, 8, 8),    // Google
-        IPAddress(1, 1, 1, 1),    // Cloudflare
-        IPAddress(208, 67, 222, 222) // OpenDNS
-    };
-    
-    for (int i = 0; i < 3; i++) {
-        if (client.connect(dnsServers[i], 53)) {
-            client.stop();
-            return true;
-        }
-        delay(1000);
-    }
-    
-    return false;
-}
 
-// ===== Google Sheets Integration ===== //
-void sendDataToGoogleSheets(uint16_t moisture, const String& pumpStatus) {
-    Serial.println("=== Sending data to Google Sheets ===");
-    Serial.println("URL: " + googleScriptURL);
-    Serial.println("URL Length: " + String(googleScriptURL.length()));
-    
-    if (!wifiConnected) {
-        Serial.println("Cannot send data: WiFi not connected");
-        return;
-    }
-    
-    if (googleScriptURL.length() == 0) {
-        Serial.println("Cannot send data: No Google Script URL configured");
-        return;
-    }
-    
-    // Check if it's the default hardcoded URL (means not configured by user)
-    if (googleScriptURL == "https://script.google.com/macros/s/YOUR_NEW_UNIQUE_URL_HERE") {
-        Serial.println("Cannot send data: Using default URL - please configure your own Google Script URL");
-        return;
-    }
-    Serial.println("Moisture: " + String(moisture));
-    Serial.println("Pump Status: " + pumpStatus);
-    
     WiFiClientSecure client;
+    HTTPClient https;
     
-    // Set SSL/TLS configuration for better compatibility
-    client.setInsecure(); // Skip certificate verification for Google Apps Script
-    client.setTimeout(15000); // 15 second timeout
+    client.setInsecure();
     
-    // Try to set a specific cipher suite for better compatibility
-    #ifdef DEBUG_ESP_SSL
-    Serial.println("SSL Debug enabled");
-    #endif
+    String currentFirestoreEndpoint = "https://firestore.googleapis.com/v1/projects/" + firebaseProjectId + "/databases/(default)/documents/";
     
-    HTTPClient http;
+    String readingId = String(millis());
+    String subcollectionPath = "plantData/UWQKMJoSqSSNWVjnf1smQQQJSoB2/data";
+    String url = currentFirestoreEndpoint + subcollectionPath + "?documentId=" + readingId + "&key=" + firebaseApiKey;
     
-    // Begin connection with detailed error checking
-    Serial.println("Initializing HTTP connection...");
-    if (!http.begin(client, googleScriptURL)) {
-        Serial.println("HTTP begin failed!");
+    if (https.begin(client, url)) {
+        https.addHeader("Content-Type", "application/json");
+        
+        JsonDocument doc;
+        doc["fields"]["moisture"]["integerValue"] = String(moisture);
+        doc["fields"]["pumpStatus"]["stringValue"] = pumpStatus;
+        doc["fields"]["deviceId"]["stringValue"] = "ESP8266_001";
+        doc["fields"]["readingId"]["stringValue"] = readingId;
+        
+        String jsonString;
+        serializeJson(doc, jsonString);
+        
+        int httpResponseCode = https.POST(jsonString);
+        
+        if (httpResponseCode == 200 || httpResponseCode == 201) {
+            updateMainDeviceStatus(moisture, pumpStatus, currentFirestoreEndpoint);
+        } else {
+            Serial.printf("HTTP Response: %d\n", httpResponseCode);
+            if (httpResponseCode > 0) {
+                String response = https.getString();
+                Serial.println("Response: " + response);
+            }
+        }
+        
+        https.end();
+    }
+}
+
+void updateMainDeviceStatus(uint16_t moisture, const String& pumpStatus, const String& endpoint) {
+    WiFiClientSecure client;
+    HTTPClient https;
+    client.setInsecure();
+    
+    String userDocPath = "plantData/UWQKMJoSqSSNWVjnf1smQQQJSoB2";
+    String statusUrl = endpoint + userDocPath + "?key=" + firebaseApiKey;
+    
+    if (https.begin(client, statusUrl)) {
+        https.addHeader("Content-Type", "application/json");
+        
+        JsonDocument statusDoc;
+        statusDoc["fields"]["currentMoisture"]["integerValue"] = String(moisture);
+        statusDoc["fields"]["currentPumpStatus"]["stringValue"] = pumpStatus;
+        statusDoc["fields"]["deviceId"]["stringValue"] = "ESP8266_001";
+        statusDoc["fields"]["deviceName"]["stringValue"] = "Plant Irrigation System";
+        statusDoc["fields"]["totalReadings"]["integerValue"] = String(millis() / 10000);
+        
+        String statusJsonString;
+        serializeJson(statusDoc, statusJsonString);
+        
+        https.PATCH(statusJsonString);
+        
+        https.end();
+    }
+}
+
+void checkForConfigUpdates() {
+    if (!wifiConnected || firebaseProjectId.length() == 0 || firebaseApiKey.length() == 0) {
         return;
     }
+
+    WiFiClientSecure client;
+    HTTPClient https;
+    client.setInsecure();
     
-    // Set headers
-    http.addHeader("Content-Type", "application/x-www-form-urlencoded");
-    http.addHeader("User-Agent", "ESP8266-PlantWatering/1.0");
-    http.addHeader("Accept", "application/json,text/plain");
+    String configPath = "plantData/UWQKMJoSqSSNWVjnf1smQQQJSoB2/config/DeviceConfig";
+    String configUrl = "https://firestore.googleapis.com/v1/projects/" + firebaseProjectId + "/databases/(default)/documents/" + configPath + "?key=" + firebaseApiKey;
     
-    // Set timeout
-    http.setTimeout(15000);
-    
-    // Prepare data to send
-    String postData = "moisture=" + String(moisture) + "&pumpStatus=" + pumpStatus;
-    Serial.println("POST Data: " + postData);
-    
-    // Send POST request
-    Serial.println("Sending POST request...");
-    int httpResponseCode = http.POST(postData);
-    
-    Serial.println("HTTP Response Code: " + String(httpResponseCode));
-    
-    if (httpResponseCode > 0) {
-        String response = http.getString();
-        Serial.println("Response Length: " + String(response.length()));
-        Serial.println("Response: " + response);
+    if (https.begin(client, configUrl)) {
+        int httpResponseCode = https.GET();
         
-        if (httpResponseCode == 200 || httpResponseCode == 302) {
-            Serial.println("✓ Data sent successfully!");
-        } else {
-            Serial.println("⚠ Unexpected response code: " + String(httpResponseCode));
-        }
-    } else {
-        // Detailed error reporting
-        Serial.println("✗ HTTP Error occurred:");
-        switch (httpResponseCode) {
-            case -1:
-                Serial.println("  Connection failed - Check network or URL");
-                break;
-            case -2:
-                Serial.println("  Send header failed");
-                break;
-            case -3:
-                Serial.println("  Send payload failed");
-                break;
-            case -4:
-                Serial.println("  Not connected");
-                break;
-            case -5:
-                Serial.println("  Connection lost");
-                break;
-            case -6:
-                Serial.println("  No stream");
-                break;
-            case -7:
-                Serial.println("  No HTTP server");
-                break;
-            case -8:
-                Serial.println("  Too less RAM");
-                break;
-            case -9:
-                Serial.println("  Encoding error");
-                break;
-            case -10:
-                Serial.println("  Stream write error");
-                break;
-            case -11:
-                Serial.println("  Read timeout");
-                break;
-            default:
-                Serial.println("  Unknown error: " + String(httpResponseCode));
+        if (httpResponseCode == 200) {
+            String response = https.getString();
+            
+            JsonDocument doc;
+            DeserializationError error = deserializeJson(doc, response);
+            
+            if (!error && doc.containsKey("fields")) {
+                uint16_t newDryThresh = DRY_THRESHOLD;
+                uint16_t newWetThresh = WET_THRESHOLD;
+                unsigned long newPumpTime = PUMP_RUN_TIME;
+                unsigned long newDataInterval = DATA_SEND_INTERVAL;
+                bool deviceEnabled = true;
+                bool autoMode = true;
+                bool configChanged = false;
+                
+                if (doc["fields"]["dryThreshold"]["integerValue"]) {
+                    newDryThresh = doc["fields"]["dryThreshold"]["integerValue"].as<int>();
+                    if (newDryThresh != DRY_THRESHOLD) configChanged = true;
+                }
+                
+                if (doc["fields"]["wetThreshold"]["integerValue"]) {
+                    newWetThresh = doc["fields"]["wetThreshold"]["integerValue"].as<int>();
+                    if (newWetThresh != WET_THRESHOLD) configChanged = true;
+                }
+                
+                if (doc["fields"]["pumpRunTime"]["integerValue"]) {
+                    newPumpTime = doc["fields"]["pumpRunTime"]["integerValue"].as<long>();
+                    if (newPumpTime != PUMP_RUN_TIME) configChanged = true;
+                }
+                
+                if (doc["fields"]["dataSendInterval"]["integerValue"]) {
+                    newDataInterval = doc["fields"]["dataSendInterval"]["integerValue"].as<long>();
+                    if (newDataInterval != DATA_SEND_INTERVAL) configChanged = true;
+                }
+                
+                if (doc["fields"]["deviceEnabled"]["booleanValue"].is<bool>()) {
+                    deviceEnabled = doc["fields"]["deviceEnabled"]["booleanValue"].as<bool>();
+                }
+                
+                if (doc["fields"]["autoMode"]["booleanValue"].is<bool>()) {
+                    autoMode = doc["fields"]["autoMode"]["booleanValue"].as<bool>();
+                }
+                
+                if (configChanged) {
+                    updateDeviceConfig(newDryThresh, newWetThresh, newPumpTime, newDataInterval, deviceEnabled, autoMode);
+                }
+            }
         }
         
-        // Check WiFi status
-        if (WiFi.status() != WL_CONNECTED) {
-            Serial.println("  WiFi disconnected during request");
-        } else {
-            Serial.println("  WiFi still connected (RSSI: " + String(WiFi.RSSI()) + ")");
-        }
+        https.end();
     }
+}
+
+void updateDeviceConfig(uint16_t dryThresh, uint16_t wetThresh, unsigned long pumpTime, unsigned long dataInterval, bool deviceEnabled, bool autoMode) {
+    DRY_THRESHOLD = dryThresh;
+    WET_THRESHOLD = wetThresh;
+    PUMP_RUN_TIME = pumpTime;
+
+    String ssid, pass, fbProjectId, fbApiKey;
+    uint16_t oldDry, oldWet;
+    unsigned long oldPump;
     
-    http.end();
-    Serial.println("=== End Google Sheets request ===");
+    if (loadConfig(ssid, pass, fbProjectId, fbApiKey, oldDry, oldWet, oldPump)) {
+        saveConfig(ssid, pass, fbProjectId, fbApiKey, DRY_THRESHOLD, WET_THRESHOLD, PUMP_RUN_TIME);
+    }
 }
 
 // ===== Web Server Functions ===== //
@@ -489,9 +444,9 @@ void setupWebServer() {
     server.on("/status", HTTP_GET, handleGetStatus);
     server.on("/setThreshold", HTTP_POST, handleSetThreshold);
     server.on("/setPumpTime", HTTP_POST, handleSetPumpTime);
-    server.on("/testSheets", HTTP_GET, handleTestGoogleSheets);
+    server.on("/testFirestore", HTTP_GET, handleTestFirestore);
+    server.on("/resetConfig", HTTP_GET, handleResetConfig); 
     
-    // Enable CORS for all routes
     server.onNotFound([]() {
         if (server.method() == HTTP_OPTIONS) {
             server.sendHeader("Access-Control-Allow-Origin", "*");
@@ -513,28 +468,38 @@ void handleRoot() {
     html += "<h1>Smart Irrigation System v2.0</h1>";
     html += "<h2>Current Status</h2>";
     html += "<p>Moisture Level: " + String(analogRead(SENSOR_PIN)) + "</p>";
-    html += "<p>Dry Threshold: " + String(DRY_THRESHOLD) + "</p>";
-    html += "<p>Wet Threshold: " + String(WET_THRESHOLD) + "</p>";
-    html += "<p>Pump Run Time: " + String(PUMP_RUN_TIME) + "ms</p>";
-    html += "<p>Data Logging: " + String((googleScriptURL != "https://script.google.com/macros/s/YOUR_NEW_UNIQUE_URL_HERE") ? "Enabled" : "Disabled") + "</p>";
+    html += "<p>Data Logging: ";
+    html += (firebaseProjectId.length() > 0 ? "Firestore Enabled" : "Disabled");
+    html += "</p>";
+    html += "<p>Data Path: plantData/UWQKMJoSqSSNWVjnf1smQQQJSoB2/data</p>";
+    html += "<p>Config Path: plantData/UWQKMJoSqSSNWVjnf1smQQQJSoB2/config/DeviceConfig</p>";
+    html += "<p>Device ID: ESP8266_001</p>";
+    html += "<h3>Actions</h3>";
+    html += "<p><a href='/testFirestore'>Test Firestore</a></p>";
+    html += "<p><a href='/resetConfig' onclick='return confirm(\"Are you sure? This will restart the device.\")'>Reset Configuration</a></p>";
     html += "</body></html>";
     server.send(200, "text/html", html);
 }
 
 void handleGetStatus() {
     server.sendHeader("Access-Control-Allow-Origin", "*");
-    server.sendHeader("Content-Type", "application/json");
-    
     JsonDocument doc;
     doc["moisture"] = analogRead(SENSOR_PIN);
     doc["dryThreshold"] = DRY_THRESHOLD;
     doc["wetThreshold"] = WET_THRESHOLD;
     doc["pumpRunTime"] = PUMP_RUN_TIME;
-    doc["pumpState"] = (currentState == MONITORING) ? "MONITORING" : 
-                      (currentState == PUMP_RUNNING) ? "PUMP_RUNNING" : "PUMP_WAITING";
+    
+    String pumpStateStr;
+    switch (currentState) {
+        case MONITORING: pumpStateStr = "MONITORING"; break;
+        case PUMP_RUNNING: pumpStateStr = "PUMP_RUNNING"; break;
+        case PUMP_WAITING: pumpStateStr = "PUMP_WAITING"; break;
+        case MANUAL_PUMPING: pumpStateStr = "MANUAL_PUMPING"; break; // NEW
+    }
+    doc["pumpState"] = pumpStateStr;
+
     doc["wifiConnected"] = wifiConnected;
-    doc["rssi"] = WiFi.RSSI();
-    doc["dataLoggingEnabled"] = (googleScriptURL != "https://script.google.com/macros/s/YOUR_NEW_UNIQUE_URL_HERE");
+    doc["dataLoggingEnabled"] = (firebaseProjectId.length() > 0 && firebaseProjectId != "your-project-id");
     
     String response;
     serializeJson(doc, response);
@@ -543,172 +508,190 @@ void handleGetStatus() {
 
 void handleSetThreshold() {
     server.sendHeader("Access-Control-Allow-Origin", "*");
-    server.sendHeader("Content-Type", "application/json");
+    if (server.hasArg("dryThreshold")) DRY_THRESHOLD = server.arg("dryThreshold").toInt();
+    if (server.hasArg("wetThreshold")) WET_THRESHOLD = server.arg("wetThreshold").toInt();
     
-    if (server.hasArg("dryThreshold")) {
-        int newDryThreshold = server.arg("dryThreshold").toInt();
-        if (newDryThreshold > 0 && newDryThreshold < 1024) {
-            DRY_THRESHOLD = newDryThreshold;
-            Serial.println("Dry threshold updated to: " + String(DRY_THRESHOLD));
-        }
+    String ssid, pass, fbProjectId, fbApiKey;
+    uint16_t dry, wet; unsigned long pumpT;
+    if (loadConfig(ssid, pass, fbProjectId, fbApiKey, dry, wet, pumpT)) {
+        saveConfig(ssid, pass, fbProjectId, fbApiKey, DRY_THRESHOLD, WET_THRESHOLD, PUMP_RUN_TIME);
     }
-    
-    if (server.hasArg("wetThreshold")) {
-        int newWetThreshold = server.arg("wetThreshold").toInt();
-        if (newWetThreshold > 0 && newWetThreshold < 1024) {
-            WET_THRESHOLD = newWetThreshold;
-            Serial.println("Wet threshold updated to: " + String(WET_THRESHOLD));
-        }
-    }
-    
-    // Save to config file
-    String ssid, pass, gurl;
-    uint16_t dryThresh, wetThresh;
-    unsigned long pumpTime;
-    if (loadConfig(ssid, pass, gurl, dryThresh, wetThresh, pumpTime)) {
-        saveConfig(ssid, pass, gurl, DRY_THRESHOLD, WET_THRESHOLD, PUMP_RUN_TIME);
-    }
-    
-    server.send(200, "application/json", "{\"status\":\"success\",\"message\":\"Thresholds updated\"}");
+    server.send(200, "application/json", "{\"status\":\"success\"}");
 }
 
 void handleSetPumpTime() {
     server.sendHeader("Access-Control-Allow-Origin", "*");
-    server.sendHeader("Content-Type", "application/json");
-    
-    if (server.hasArg("pumpRunTime")) {
-        int newPumpTime = server.arg("pumpRunTime").toInt();
-        if (newPumpTime > 0 && newPumpTime <= 60000) { // Max 60 seconds
-            PUMP_RUN_TIME = newPumpTime;
-            Serial.println("Pump run time updated to: " + String(PUMP_RUN_TIME) + "ms");
-            
-            // Save to config file
-            String ssid, pass, gurl;
-            uint16_t dryThresh, wetThresh;
-            unsigned long pumpTime;
-            if (loadConfig(ssid, pass, gurl, dryThresh, wetThresh, pumpTime)) {
-                saveConfig(ssid, pass, gurl, DRY_THRESHOLD, WET_THRESHOLD, PUMP_RUN_TIME);
-            }
-            
-            server.send(200, "application/json", "{\"status\":\"success\",\"message\":\"Pump time updated\"}");
-        } else {
-            server.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Invalid pump time (1-60000ms)\"}");
-        }
-    } else {
-        server.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Missing pumpRunTime parameter\"}");
+    if (server.hasArg("pumpRunTime")) PUMP_RUN_TIME = server.arg("pumpRunTime").toInt();
+
+    String ssid, pass, fbProjectId, fbApiKey;
+    uint16_t dry, wet; unsigned long pumpT;
+    if (loadConfig(ssid, pass, fbProjectId, fbApiKey, dry, wet, pumpT)) {
+        saveConfig(ssid, pass, fbProjectId, fbApiKey, DRY_THRESHOLD, WET_THRESHOLD, PUMP_RUN_TIME);
     }
+    server.send(200, "application/json", "{\"status\":\"success\"}");
 }
 
-void handleTestGoogleSheets() {
+void handleTestFirestore() {
     server.sendHeader("Access-Control-Allow-Origin", "*");
-    server.sendHeader("Content-Type", "application/json");
-    
-    Serial.println("Manual test of Google Sheets connection requested via web");
-    
-    // Send test data
-    sendDataToGoogleSheets(999, "TEST");
-    
-    server.send(200, "application/json", "{\"status\":\"success\",\"message\":\"Test request sent - check serial monitor for details\"}");
+    Serial.println("Manual test of Firestore connection requested via web");
+    sendDataToFirestore(999, "TEST");
+    server.send(200, "application/json", "{\"status\":\"success\",\"message\":\"Test sent to Firestore\"}");
 }
 
-// ===== Core Irrigation Logic ===== //
-void setup() {
-    Serial.begin(115200);
-    delay(2000); // Increased stabilization delay
-    if (!LittleFS.begin()) {
-        Serial.println("Failed to mount file system");
-    } else {
-        Serial.println("Forcing removal of old config file...");
+void handleResetConfig() {
+    server.sendHeader("Access-Control-Allow-Origin", "*");
+    Serial.println("Configuration reset requested via web");
+    
+    if (LittleFS.exists(CONFIG_FILE)) {
         LittleFS.remove(CONFIG_FILE);
     }
-    // Initialize pump control
+    
+    WiFi.disconnect(true);
+    
+    server.send(200, "application/json", "{\"status\":\"success\",\"message\":\"Configuration reset. Device will restart.\"}");
+    
+    delay(1000);
+    ESP.restart();
+}
+
+// ===== Core Logic ===== //
+void setup() {
+    Serial.begin(115200);
+    delay(2000);
+    
     pinMode(PUMP_CTRL_PIN, OUTPUT);
     digitalWrite(PUMP_CTRL_PIN, LOW);
     
-    Serial.println("\nSmart Irrigation System v2.0\n");
-    Serial.println("Initial Google Script URL: " + googleScriptURL);
-    Serial.println("URL Length: " + String(googleScriptURL.length()));
+    // NEW: Initialize button and LED pins
+    pinMode(BUTTON_PIN, INPUT_PULLUP);
+    pinMode(LED_PIN, OUTPUT);
+    digitalWrite(LED_PIN, LOW);
     
-    // Set up WiFi with enhanced stability
-    setupWiFi();
-    connectWiFi();
-    
-    // Start web server for app control
-    setupWebServer();
-    
-    Serial.println("Dry threshold: " + String(DRY_THRESHOLD) + ", Wet threshold: " + String(WET_THRESHOLD));
-    Serial.println("Pump run time: " + String(PUMP_RUN_TIME) + "ms");
-    Serial.println("Final Google Script URL: " + googleScriptURL);
-    Serial.println("Final URL Length: " + String(googleScriptURL.length()));
-    Serial.println("Moisture updates every 3 seconds");
-    Serial.println("Data sent to Google Sheets every 1 minute");
-    Serial.println("Web server available at: http://" + WiFi.localIP().toString());
-    Serial.println("WiFi stability enhancements active");
+    Serial.println("\nSmart Irrigation System v2.0 - Firestore Edition (Offline-First Mode)\n");
+
+    // Mount FS (already attempted in functions, but ensure thresholds potentially loaded early)
+    String ssid, pass, fbPid, fbKey; uint16_t dry, wet; unsigned long pumpTime;
+    if (loadConfig(ssid, pass, fbPid, fbKey, dry, wet, pumpTime)) {
+        if (fbPid.length()) firebaseProjectId = fbPid;
+        if (fbKey.length()) firebaseApiKey = fbKey;
+        DRY_THRESHOLD = dry; WET_THRESHOLD = wet; PUMP_RUN_TIME = pumpTime;
+        if (ssid.length()) {
+            Serial.println("Initiating non-blocking WiFi begin...");
+            WiFi.begin(ssid.c_str(), pass.c_str());
+        }
+    } else {
+        Serial.println("No saved config yet; device will run offline until configured.");
+    }
+    // Web server will be started upon successful WiFi connection in handleWiFi()
 }
 
-void loop() {
+// NEW: Function to handle LED status indicators
+void updateLedStatus() {
     unsigned long currentTime = millis();
     
-    // Handle web server requests
-    server.handleClient();
-    
-    // Check WiFi status (with built-in rate limiting)
-    checkWiFi();
-    
-    // Display moisture reading every 3 seconds
-    if (currentTime - lastDisplayTime >= DISPLAY_INTERVAL) {
-        uint16_t moisture = analogRead(SENSOR_PIN);
-        
-        // Build the output string
-        String output = "Moisture: " + String(moisture);
-        output += " | State: ";
-        String pumpStatusStr = "";
-        switch (currentState) {
-            case MONITORING: 
-                output += "MONITORING"; 
-                pumpStatusStr = "MONITORING";
-                break;
-            case PUMP_RUNNING: 
-                output += "PUMP_RUNNING"; 
-                pumpStatusStr = "PUMP_RUNNING";
-                break;
-            case PUMP_WAITING: 
-                output += "PUMP_WAITING"; 
-                pumpStatusStr = "PUMP_WAITING";
-                break;
+    // Solid ON: System is running and monitoring
+    if (currentState == MONITORING || currentState == PUMP_WAITING) {
+        digitalWrite(LED_PIN, HIGH);
+    } 
+    // Fast Blink: Pump is running (either auto or manual)
+    else if (currentState == PUMP_RUNNING || currentState == MANUAL_PUMPING) {
+        if (currentTime - lastBlinkTime >= 150) { // Blink every 150ms
+            ledState = !ledState;
+            digitalWrite(LED_PIN, ledState);
+            lastBlinkTime = currentTime;
         }
-        
-        output += " | WiFi: ";
-        if (wifiConnected) {
-            output += "OK (RSSI: " + String(WiFi.RSSI()) + ")";
-        } else {
-            output += "DISCONNECTED";
+    }
+    // Slow Blink: WiFi is disconnected
+    if (!wifiConnected) {
+        if (currentTime - lastBlinkTime >= 1000) { // Blink every 1 second
+            ledState = !ledState;
+            digitalWrite(LED_PIN, ledState);
+            lastBlinkTime = currentTime;
         }
-        
-        Serial.println(output);
-        lastDisplayTime = currentTime;
-        
-        // Send data to Google Sheets every minute
+    }
+}
+
+// NEW: Offline-first refactored loop
+void loop() {
+    unsigned long currentTime = millis();
+
+    // Core always-on logic
+    runWateringLogic();
+    updateLedStatus();
+    handleWiFi();
+
+    // Network dependent tasks
+    if (wifiConnected) {
+        server.handleClient();
+
+        if (currentTime - lastConfigCheck >= CONFIG_CHECK_INTERVAL) {
+            checkForConfigUpdates();
+            lastConfigCheck = currentTime;
+        }
+
         if (currentTime - lastDataSend >= DATA_SEND_INTERVAL) {
-            sendDataToGoogleSheets(moisture, pumpStatusStr);
+            uint16_t moisture = analogRead(SENSOR_PIN);
+            String pumpStatusStr;
+            switch (currentState) {
+                case MONITORING: pumpStatusStr = "MONITORING"; break;
+                case PUMP_RUNNING: pumpStatusStr = "PUMP_RUNNING"; break;
+                case PUMP_WAITING: pumpStatusStr = "PUMP_WAITING"; break;
+                case MANUAL_PUMPING: pumpStatusStr = "MANUAL_PUMPING"; break;
+            }
+            sendDataToFirestore(moisture, pumpStatusStr);
             lastDataSend = currentTime;
         }
     }
+    delay(10);
+}
 
-    // State machine for pump control
+// NEW: Extracted watering logic function
+void runWateringLogic() {
+    unsigned long currentTime = millis();
+
+    // Debounced button handling
+    if (currentTime - lastButtonCheck > DEBOUNCE_DELAY) {
+        bool pressed = (digitalRead(BUTTON_PIN) == LOW);
+        if (pressed && !buttonPressed) {
+            buttonPressed = true;
+            if (currentState == MONITORING || currentState == PUMP_WAITING) {
+                currentState = MANUAL_PUMPING;
+                pumpStartTime = currentTime;
+                digitalWrite(PUMP_CTRL_PIN, HIGH);
+                Serial.println("PUMP: ON (manual override)");
+            }
+        } else if (!pressed) {
+            buttonPressed = false;
+        }
+        lastButtonCheck = currentTime;
+    }
+
+    // Periodic status display
+    if (currentTime - lastDisplayTime >= DISPLAY_INTERVAL) {
+        uint16_t moisture = analogRead(SENSOR_PIN);
+        const char* stateStr = "UNKNOWN";
+        switch (currentState) {
+            case MONITORING: stateStr = "MONITORING"; break;
+            case PUMP_RUNNING: stateStr = "PUMP_RUNNING"; break;
+            case PUMP_WAITING: stateStr = "PUMP_WAITING"; break;
+            case MANUAL_PUMPING: stateStr = "MANUAL_PUMPING"; break;
+        }
+        Serial.printf("Moisture: %d | State: %s | WiFi: %s\n", moisture, stateStr, (wifiConnected ? "OK" : "DISCONNECTED"));
+        lastDisplayTime = currentTime;
+    }
+
+    // Pump state machine
     switch (currentState) {
-        case MONITORING: {
-            uint16_t moisture = analogRead(SENSOR_PIN);
-            if (moisture >= DRY_THRESHOLD) {
+        case MONITORING:
+            if (analogRead(SENSOR_PIN) >= DRY_THRESHOLD) {
                 digitalWrite(PUMP_CTRL_PIN, HIGH);
                 currentState = PUMP_RUNNING;
                 pumpStartTime = currentTime;
                 Serial.println("PUMP: ON (dry soil detected)");
             }
             break;
-        }
-        
         case PUMP_RUNNING:
+        case MANUAL_PUMPING:
             if (currentTime - pumpStartTime >= PUMP_RUN_TIME) {
                 digitalWrite(PUMP_CTRL_PIN, LOW);
                 currentState = PUMP_WAITING;
@@ -716,26 +699,45 @@ void loop() {
                 Serial.println("PUMP: OFF (cycle completed)");
             }
             break;
-            
         case PUMP_WAITING:
             if (currentTime - lastPumpActionTime >= PUMP_WAIT_TIME) {
-                uint16_t moisture = analogRead(SENSOR_PIN);
-                Serial.print("Post-cycle check - Moisture: ");
-                Serial.println(moisture);
-                
-                if (moisture <= WET_THRESHOLD) {
-                    currentState = MONITORING;
-                    Serial.println("TARGET REACHED: Soil adequately moist");
-                } else {
-                    digitalWrite(PUMP_CTRL_PIN, HIGH);
-                    currentState = PUMP_RUNNING;
-                    pumpStartTime = currentTime;
-                    Serial.println("PUMP: ON (soil still too dry)");
-                }
+                currentState = MONITORING;
+                Serial.println("STATE: Resuming monitoring.");
             }
             break;
     }
-    
-    // Small delay to prevent overwhelming the system
-    delay(100);
+}
+
+// NEW: Non-blocking WiFi management
+void handleWiFi() {
+    unsigned long currentTime = millis();
+
+    // Already connected
+    if (WiFi.status() == WL_CONNECTED) {
+        if (!wifiConnected) {
+            wifiConnected = true;
+            Serial.println("WiFi connected");
+            Serial.println("IP: " + WiFi.localIP().toString());
+            // Start server when first connected
+            setupWebServer();
+        }
+        return;
+    }
+
+    // Lost connection
+    if (wifiConnected && WiFi.status() != WL_CONNECTED) {
+        wifiConnected = false;
+        Serial.println("WiFi lost - transitioning to offline mode");
+    }
+
+    // Periodic reconnect attempts
+    if (currentTime - lastReconnectAttempt >= RECONNECT_INTERVAL) {
+        lastReconnectAttempt = currentTime;
+        if (WiFi.SSID().length()) {
+            Serial.println("Attempting WiFi reconnect...");
+            WiFi.reconnect();
+        } else {
+            Serial.println("No stored SSID; start config portal if user action required.");
+        }
+    }
 }
