@@ -288,16 +288,18 @@ void loop() {
             break;
             
         case SHORT_PRESS:
-            Serial.println("\n[BUTTON] Short press detected - Manual watering request");
+            Serial.println("\n╔═════════════════════════════════════╗");
+            Serial.println("║ 🔘 BUTTON: Manual Water Request    ║");
+            Serial.println("╚═════════════════════════════════════╝");
             setLedPattern(LED_BUTTON_FEEDBACK);
             if (deviceState != LOCKED_FAULT) {
                 if (checkPumpSafety()) {
                     activatePump("MANUAL");
                 } else {
-                    Serial.println("✗ Manual watering denied - Safety check failed");
+                    Serial.println("❌ DENIED: Safety interval not met\n");
                 }
             } else {
-                Serial.println("✗ Manual watering denied - Device in fault state");
+                Serial.println("❌ DENIED: Device in FAULT state\n");
             }
             break;
             
@@ -336,13 +338,24 @@ void loop() {
     // Display status on serial
     if (currentTime - lastDisplayTime >= DISPLAY_INTERVAL) {
         uint16_t moisture = analogRead(SENSOR_PIN);
-        Serial.printf("[STATUS] Moisture: %d | Pump: %s | Device: %s | WiFi: %s%s\n",
+        
+        // Compact status line
+        Serial.printf("[STATUS] M:%d | P:%s | D:%s | W:%s",
             moisture,
             getPumpStateString().c_str(),
             getDeviceStateString().c_str(),
-            wifiConnected ? "ONLINE" : "OFFLINE",
-            lockedFault ? " | FAULT!" : ""
+            wifiConnected ? "ON" : "OFF"
         );
+        
+        // Add extra info if relevant
+        if (lockedFault) Serial.print(" | ⚠️ FAULT");
+        if (wifiConnected) Serial.printf(" | RSSI:%ddBm", WiFi.RSSI());
+        if (pumpState == PUMP_WAITING) {
+            unsigned long timeSincePump = getCurrentEpoch() - lastPumpEndEpoch;
+            Serial.printf(" | Next:%lus", MIN_INTERVAL_SEC - timeSincePump);
+        }
+        Serial.println();
+        
         lastDisplayTime = currentTime;
     }
     
@@ -862,8 +875,11 @@ void activatePump(const String& method) {
     pumpStartTime = millis();
     setLedPattern(LED_PUMPING);
     
-    Serial.println("  PUMP: ON (" + method + " activation)");
-    Serial.printf("  Moisture before: %d\n", moistureBeforePump);
+    Serial.println("\n┌─────────────────────────────────────┐");
+    Serial.printf("│ PUMP ACTIVATED: %s%-14s│\n", method.c_str(), "");
+    Serial.printf("│ Moisture Before: %-18d│\n", moistureBeforePump);
+    Serial.printf("│ Run Time: %d ms%-20s│\n", PUMP_RUN_TIME, "");
+    Serial.println("└─────────────────────────────────────┘");
     
     // Log to Firestore if online
     if (wifiConnected) {
@@ -874,37 +890,46 @@ void activatePump(const String& method) {
 
 void checkPumpEffectiveness() {
     uint16_t moistureAfter = analogRead(SENSOR_PIN);
-    int16_t delta = moistureBeforePump - moistureAfter;
+    int16_t delta = moistureAfter - moistureBeforePump;  // Positive = wetter
     
-    Serial.printf("  Effectiveness Check: Before=%d, After=%d, Delta=%d\n", 
-                  moistureBeforePump, moistureAfter, delta);
+    Serial.println("\n┌─────────────────────────────────────┐");
+    Serial.println("│ PUMP EFFECTIVENESS CHECK            │");
+    Serial.printf("│ Before: %-27d│\n", moistureBeforePump);
+    Serial.printf("│ After:  %-27d│\n", moistureAfter);
+    Serial.printf("│ Delta:  %-27d│\n", delta);
     
     // Define minimum acceptable delta (soil should be at least 30 points wetter)
     const int16_t MIN_DELTA = 30;
     
     if (delta < MIN_DELTA) {
         noEffectCounter++;
-        Serial.printf("  ⚠ No effect detected! Count: %d/%d\n", 
-                      noEffectCounter, MAX_NO_EFFECT_REPEATS);
+        Serial.printf("│ ⚠️  NO EFFECT! Count: %d/%d%-10s│\n", 
+                      noEffectCounter, MAX_NO_EFFECT_REPEATS, "");
         
         if (noEffectCounter >= MAX_NO_EFFECT_REPEATS) {
-            Serial.println("  ✗ CRITICAL FAULT: Pump ineffective!");
+            Serial.println("│                                     │");
+            Serial.println("│ ❌ CRITICAL FAULT DETECTED!         │");
+            Serial.println("│ → Pump ineffective                  │");
+            Serial.println("│ → Auto-watering LOCKED              │");
             lockedFault = true;
             deviceState = LOCKED_FAULT;
             savePumpState();
             setLedPattern(LED_FAULT);
             
-            logEventToFirestore("fault_locked", 
-                               "Pump ineffective after " + String(MAX_NO_EFFECT_REPEATS) + " attempts");
+            if (wifiConnected) {
+                logEventToFirestore("fault_locked", 
+                                   "Pump ineffective after " + String(MAX_NO_EFFECT_REPEATS) + " attempts");
+            }
         }
     } else {
-        // Reset counter on successful watering
+        Serial.println("│ ✅ PUMP EFFECTIVE - Soil wetter     │");
         if (noEffectCounter > 0) {
-            Serial.println("  ✓ Pump effective - resetting no-effect counter");
+            Serial.printf("│ Counter reset: %d → 0%-15s│\n", noEffectCounter, "");
         }
         noEffectCounter = 0;
         savePumpState();
     }
+    Serial.println("└─────────────────────────────────────┘\n");
 }
 
 // ====================================================================
@@ -925,25 +950,31 @@ void sendDataToFirestore(uint16_t moisture, const String& pumpStatus, const Stri
     HTTPClient https;
     client.setInsecure();
     
-    // Create document in logs subcollection
-    String logId = String(millis());
+    // Create document in logs subcollection with timestamp-based ID
+    unsigned long timestamp = getCurrentEpoch();
+    String logId = String(timestamp) + "_" + String(millis() % 1000);
     String url = "https://firestore.googleapis.com/v1/projects/" + firebaseProjectId + 
                  "/databases/(default)/documents/plantData/" + deviceId + "/logs?documentId=" + logId + 
                  "&key=" + firebaseApiKey;
     
     if (!https.begin(client, url)) {
-        Serial.println("✗ Firestore: Failed to connect");
+        Serial.println("✗ [FIREBASE] Connection failed");
         return;
     }
     
     https.addHeader("Content-Type", "application/json");
     
-    // Firestore REST API requires specific format
+    // Enhanced Firestore log with more details
     JsonDocument doc;
-    doc["fields"]["moisture"]["integerValue"] = moisture;  // Integer, not string
+    doc["fields"]["moisture"]["integerValue"] = moisture;
     doc["fields"]["pumpStatus"]["stringValue"] = pumpStatus;
     doc["fields"]["activationMethod"]["stringValue"] = activationMethod;
     doc["fields"]["deviceState"]["stringValue"] = getDeviceStateString();
+    doc["fields"]["wifiRSSI"]["integerValue"] = WiFi.RSSI();  // Signal strength
+    doc["fields"]["uptime"]["integerValue"] = millis() / 1000;  // Device uptime in seconds
+    doc["fields"]["lockedFault"]["booleanValue"] = lockedFault;
+    doc["fields"]["noEffectCount"]["integerValue"] = noEffectCounter;
+    doc["fields"]["timestamp"]["integerValue"] = timestamp;
     
     String jsonString;
     serializeJson(doc, jsonString);
@@ -951,11 +982,13 @@ void sendDataToFirestore(uint16_t moisture, const String& pumpStatus, const Stri
     int httpCode = https.POST(jsonString);
     
     if (httpCode == 200 || httpCode == 201) {
-        // Success - silent unless debugging
+        Serial.printf("✓ [FIREBASE] Log sent → Moisture:%d, Pump:%s, State:%s\n", 
+                     moisture, pumpStatus.c_str(), getDeviceStateString().c_str());
     } else {
-        Serial.printf("✗ Firestore log failed: HTTP %d\n", httpCode);
+        Serial.printf("✗ [FIREBASE] Log failed (HTTP %d)\n", httpCode);
         if (httpCode > 0) {
-            Serial.println("Response: " + https.getString());
+            String response = https.getString();
+            Serial.println("   Response: " + response.substring(0, 200));  // First 200 chars
         }
     }
     
@@ -969,13 +1002,15 @@ void updateMainDeviceStatus(uint16_t moisture, const String& pumpStatus) {
     HTTPClient https;
     client.setInsecure();
     
-    // Update main device document
+    // Update main device document with heartbeat
     String url = "https://firestore.googleapis.com/v1/projects/" + firebaseProjectId + 
                  "/databases/(default)/documents/plantData/" + deviceId + 
                  "?updateMask.fieldPaths=currentMoisture" +
                  "&updateMask.fieldPaths=currentPumpStatus" +
                  "&updateMask.fieldPaths=lockedFault" +
                  "&updateMask.fieldPaths=lastSeen" +
+                 "&updateMask.fieldPaths=wifiRSSI" +
+                 "&updateMask.fieldPaths=uptime" +
                  "&key=" + firebaseApiKey;
     
     if (!https.begin(client, url)) {
@@ -988,11 +1023,20 @@ void updateMainDeviceStatus(uint16_t moisture, const String& pumpStatus) {
     doc["fields"]["currentMoisture"]["integerValue"] = moisture;
     doc["fields"]["currentPumpStatus"]["stringValue"] = pumpStatus;
     doc["fields"]["lockedFault"]["booleanValue"] = lockedFault;
+    doc["fields"]["lastSeen"]["integerValue"] = getCurrentEpoch();
+    doc["fields"]["wifiRSSI"]["integerValue"] = WiFi.RSSI();
+    doc["fields"]["uptime"]["integerValue"] = millis() / 1000;
     
     String jsonString;
     serializeJson(doc, jsonString);
     
     int httpCode = https.PATCH(jsonString);
+    
+    if (httpCode == 200) {
+        Serial.printf("✓ [FIREBASE] Status updated → Last seen: %lu\n", getCurrentEpoch());
+    } else if (httpCode > 0) {
+        Serial.printf("✗ [FIREBASE] Status update failed (HTTP %d)\n", httpCode);
+    }
     
     https.end();
 }
