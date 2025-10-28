@@ -41,7 +41,8 @@ constexpr uint8_t LED_PIN = D3;             // Status LED
 // FIREBASE CONFIGURATION
 // ====================================================================
 String firebaseProjectId = "bloom-watch-d6878";
-String firebaseApiKey = "AIzaSyCt74gYV9dmCm84lBK6RFBP4z7gLOrjjdo";
+String firebaseApiKey = "AIzaSyAOBmNKAPf9I-leu0mED1ESK8x9UMrL25g";
+String firebaseDatabaseURL = "https://bloom-watch-d6878-default-rtdb.firebaseio.com";
 String deviceId = "";           // Generated from MAC address
 
 // ====================================================================
@@ -1154,11 +1155,35 @@ void checkForRemoteCommands() {
                     logEventToFirestore("fault_cleared", "Remote clear via app");
                 }
                 
-                // Clear the command by deleting the document
-                HTTPClient httpsDelete;
-                if (httpsDelete.begin(client, url)) {
-                    httpsDelete.sendRequest("DELETE");
-                    httpsDelete.end();
+                // Clear the clearFault field
+                HTTPClient httpsPatch;
+                if (httpsPatch.begin(client, url + "&updateMask.fieldPaths=clearFault")) {
+                    httpsPatch.addHeader("Content-Type", "application/json");
+                    String clearPayload = "{\"fields\":{\"clearFault\":{\"booleanValue\":false}}}";
+                    httpsPatch.PATCH(clearPayload);
+                    httpsPatch.end();
+                }
+            }
+            
+            // Check for waterNow command
+            if (fields.containsKey("waterNow") && 
+                fields["waterNow"]["booleanValue"].as<bool>()) {
+                
+                Serial.println("✓ Remote command: Water Now");
+                
+                if (deviceState != LOCKED_FAULT && checkPumpSafety()) {
+                    activatePump("REMOTE");
+                } else {
+                    Serial.println("✗ Remote water command denied (safety/fault)");
+                }
+                
+                // Clear the waterNow field
+                HTTPClient httpsPatch;
+                if (httpsPatch.begin(client, url + "&updateMask.fieldPaths=waterNow")) {
+                    httpsPatch.addHeader("Content-Type", "application/json");
+                    String clearPayload = "{\"fields\":{\"waterNow\":{\"booleanValue\":false}}}";
+                    httpsPatch.PATCH(clearPayload);
+                    httpsPatch.end();
                 }
             }
         }
