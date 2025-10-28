@@ -1024,7 +1024,8 @@ void updateMainDeviceStatus(uint16_t moisture, const String& pumpStatus) {
     doc["fields"]["currentMoisture"]["integerValue"] = moisture;
     doc["fields"]["currentPumpStatus"]["stringValue"] = pumpStatus;
     doc["fields"]["lockedFault"]["booleanValue"] = lockedFault;
-    doc["fields"]["lastSeen"]["integerValue"] = getCurrentEpoch();
+    // Use Firebase server timestamp instead of ESP8266 time
+    doc["fields"]["lastSeen"]["timestampValue"] = "REQUEST_TIME";
     doc["fields"]["wifiRSSI"]["integerValue"] = WiFi.RSSI();
     doc["fields"]["uptime"]["integerValue"] = millis() / 1000;
     
