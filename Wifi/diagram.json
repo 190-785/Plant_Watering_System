@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "author": "Smart Irrigation System",
+  "editor": "wokwi",
+  "parts": [
+    {
+      "type": "wokwi-esp8266-devkit",
+      "id": "esp",
+      "top": 0,
+      "left": 0,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btn1",
+      "top": 57.6,
+      "left": -134.4,
+      "attrs": { "color": "green", "label": "Control Button" }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "led1",
+      "top": -33.6,
+      "left": -134.4,
+      "attrs": { "color": "blue", "label": "Status LED" }
+    },
+    {
+      "type": "wokwi-relay-module",
+      "id": "relay1",
+      "top": 105.6,
+      "left": 201.6,
+      "attrs": { "label": "Pump Relay" }
+    },
+    {
+      "type": "wokwi-slide-potentiometer",
+      "id": "pot1",
+      "top": -86.95,
+      "left": 201.6,
+      "attrs": { "label": "Moisture Sensor", "travelLength": "200" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r1",
+      "top": -14.4,
+      "left": -105.6,
+      "attrs": { "value": "330" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r2",
+      "top": 86.4,
+      "left": -105.6,
+      "attrs": { "value": "10000" }
+    }
+  ],
+  "connections": [
+    [ "esp:TX", "$serialMonitor:RX", "", [] ],
+    [ "esp:RX", "$serialMonitor:TX", "", [] ],
+    [ "esp:GND.1", "btn1:2.l", "black", [ "v0" ] ],
+    [ "btn1:1.r", "r2:1", "green", [ "v0" ] ],
+    [ "r2:2", "esp:3V3", "red", [ "v0" ] ],
+    [ "esp:D2", "btn1:1.l", "green", [ "v9.6", "h0" ] ],
+    [ "led1:C", "esp:GND.1", "black", [ "v0" ] ],
+    [ "led1:A", "r1:1", "blue", [ "v0" ] ],
+    [ "r1:2", "esp:D3", "blue", [ "v0" ] ],
+    [ "relay1:GND", "esp:GND.2", "black", [ "v0" ] ],
+    [ "relay1:VCC", "esp:3V3", "red", [ "v0" ] ],
+    [ "relay1:IN", "esp:D1", "yellow", [ "v0" ] ],
+    [ "pot1:GND", "esp:GND.2", "black", [ "v0" ] ],
+    [ "pot1:VCC", "esp:3V3", "red", [ "v0" ] ],
+    [ "pot1:SIG", "esp:A0", "green", [ "v0" ] ]
+  ],
+  "dependencies": {}
+}
