@@ -28,6 +28,7 @@
 #include <ESP8266WebServer.h>
 #include <ESP8266HTTPClient.h>
 #include <WiFiClientSecure.h>
+#include <time.h>  // For NTP time sync
 
 // ====================================================================
 // HARDWARE PIN CONFIGURATION
@@ -592,6 +593,24 @@ void attemptWiFiConnection() {
         setLedPattern(lockedFault ? LED_FAULT : LED_ONLINE);
         Serial.println("✓ WiFi connected");
         Serial.println("  IP: " + WiFi.localIP().toString());
+        
+        // Initialize NTP for accurate timestamps
+        configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+        Serial.print("⏰ Syncing time with NTP...");
+        // Wait up to 5 seconds for time sync
+        int retries = 0;
+        while (time(nullptr) < 100000 && retries < 10) {
+            delay(500);
+            Serial.print(".");
+            retries++;
+        }
+        if (time(nullptr) >= 100000) {
+            Serial.println(" ✓ Time synced");
+            Serial.printf("  Current time: %lu\n", time(nullptr));
+        } else {
+            Serial.println(" ✗ Time sync failed");
+        }
+        
         retryCount = 0;
         nextRetryInterval = RETRY_INTERVAL_1;
     } else {
@@ -622,6 +641,10 @@ void checkWiFi() {
         wifiConnected = true;
         deviceState = lockedFault ? LOCKED_FAULT : ONLINE;
         setLedPattern(lockedFault ? LED_FAULT : LED_ONLINE);
+        
+        // Re-sync NTP time after reconnection
+        configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+        Serial.println("⏰ Re-syncing NTP time...");
         retryCount = 0;
         nextRetryInterval = RETRY_INTERVAL_1;
     }
@@ -1024,8 +1047,8 @@ void updateMainDeviceStatus(uint16_t moisture, const String& pumpStatus) {
     doc["fields"]["currentMoisture"]["integerValue"] = moisture;
     doc["fields"]["currentPumpStatus"]["stringValue"] = pumpStatus;
     doc["fields"]["lockedFault"]["booleanValue"] = lockedFault;
-    // Use Firebase server timestamp instead of ESP8266 time
-    doc["fields"]["lastSeen"]["timestampValue"] = "REQUEST_TIME";
+    // Use current Unix timestamp (seconds since epoch)
+    doc["fields"]["lastSeen"]["integerValue"] = getCurrentEpoch();
     doc["fields"]["wifiRSSI"]["integerValue"] = WiFi.RSSI();
     doc["fields"]["uptime"]["integerValue"] = millis() / 1000;
     
@@ -1363,7 +1386,11 @@ String getPumpStateString() {
 }
 
 unsigned long getCurrentEpoch() {
-    // Since we don't have NTP, use millis as relative epoch
-    // For production, this would be actual Unix timestamp
-    return millis() / 1000;
+    // Get current Unix timestamp from NTP-synchronized time
+    time_t now = time(nullptr);
+    if (now < 100000) {
+        // Time not yet synced, return 0 to indicate invalid timestamp
+        return 0;
+    }
+    return now;
 }
