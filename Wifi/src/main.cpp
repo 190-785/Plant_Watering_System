@@ -118,7 +118,7 @@ const unsigned long DISPLAY_INTERVAL = 3000;        // 3 seconds
 const unsigned long WIFI_CHECK_INTERVAL = 5000;     // 5 seconds
 const unsigned long BUTTON_DEBOUNCE_MS = 50;        // 50ms debounce
 const unsigned long LONG_PRESS_MS = 5000;           // 5 second long press
-const unsigned long TRIPLE_PRESS_WINDOW = 2000;     // 2 second window for triple press
+const unsigned long TRIPLE_PRESS_WINDOW = 1500;     // 1.5 second window for triple press
 
 // Smart Retry Intervals (exponential backoff)
 const unsigned long RETRY_INTERVAL_1 = 3600000;     // 1 hour
@@ -697,6 +697,12 @@ ButtonAction readButton() {
         // Check for triple press
         if (currentTime - lastButtonPress < TRIPLE_PRESS_WINDOW) {
             pressCount++;
+            if (pressCount >= 3) {
+                // Triple press detected immediately on third press
+                pressCount = 0;
+                lastButtonState = currentButtonState;
+                return TRIPLE_PRESS;
+            }
         } else {
             pressCount = 1;
         }
@@ -708,16 +714,11 @@ ButtonAction readButton() {
         unsigned long pressDuration = currentTime - buttonPressStart;
         buttonPressed = false;
         
-        if (pressCount >= 3) {
-            pressCount = 0;
-            lastButtonState = currentButtonState;
-            return TRIPLE_PRESS;
-        }
-        
         if (!longPressHandled && pressDuration < LONG_PRESS_MS) {
-            pressCount = 0;  // Reset after short press action
+            // Don't immediately return SHORT_PRESS - wait to see if it's part of triple press
+            // We'll handle short press only after the triple press window expires
             lastButtonState = currentButtonState;
-            return SHORT_PRESS;
+            return NONE;
         }
         
         longPressHandled = false;
@@ -733,11 +734,15 @@ ButtonAction readButton() {
         }
     }
     
-    // Reset triple press counter after window expires
-    if (currentTime - lastButtonPress > TRIPLE_PRESS_WINDOW) {
-        if (pressCount < 3) {
-            pressCount = 0;
-        }
+    // Handle delayed short press - only after triple press window expires
+    if (!buttonPressed && pressCount == 1 && (currentTime - lastButtonPress > TRIPLE_PRESS_WINDOW)) {
+        pressCount = 0;
+        return SHORT_PRESS;
+    }
+    
+    // Reset incomplete triple press after window expires
+    if (!buttonPressed && pressCount >= 2 && (currentTime - lastButtonPress > TRIPLE_PRESS_WINDOW)) {
+        pressCount = 0;
     }
     
     lastButtonState = currentButtonState;
