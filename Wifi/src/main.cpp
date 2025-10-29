@@ -104,21 +104,21 @@ LedPattern currentLedPattern = LED_OFF;
 uint16_t DRY_THRESHOLD = 520;           // Moisture level to trigger watering
 uint16_t WET_THRESHOLD = 420;           // Moisture level when soil is wet
 unsigned long PUMP_RUN_TIME = 2000;     // 2 seconds (minimal for testing)
-unsigned long MIN_INTERVAL_SEC = 60;    // 1 minute between waterings (minimal for testing)
+unsigned long MIN_INTERVAL_SEC = 0;     // NO DELAY - for testing only! Set to 60+ in production
 uint8_t MAX_NO_EFFECT_REPEATS = 2;     // 2 consecutive failures triggers fault
-unsigned long PUMP_SETTLE_MS = 10000;   // 10 seconds wait after pump to re-read sensor
+unsigned long PUMP_SETTLE_MS = 5000;    // 5 seconds wait after pump to re-read sensor (faster testing)
 
 // ====================================================================
 // TIMING CONSTANTS
 // ====================================================================
 const unsigned long PORTAL_TIMEOUT = 300000;        // 5 minutes
-const unsigned long DATA_SEND_INTERVAL = 10000;     // 10 seconds
-const unsigned long CONFIG_CHECK_INTERVAL = 30000;  // 30 seconds
-const unsigned long DISPLAY_INTERVAL = 3000;        // 3 seconds
+const unsigned long DATA_SEND_INTERVAL = 5000;      // 5 seconds (faster logging for testing)
+const unsigned long CONFIG_CHECK_INTERVAL = 10000;  // 10 seconds (faster remote command check)
+const unsigned long DISPLAY_INTERVAL = 2000;        // 2 seconds (more frequent status updates)
 const unsigned long WIFI_CHECK_INTERVAL = 5000;     // 5 seconds
 const unsigned long BUTTON_DEBOUNCE_MS = 50;        // 50ms debounce
 const unsigned long LONG_PRESS_MS = 5000;           // 5 second long press
-const unsigned long TRIPLE_PRESS_WINDOW = 1500;     // 1.5 second window for triple press
+const unsigned long TRIPLE_PRESS_WINDOW = 800;      // 0.8 second window for triple press (more responsive)
 
 // Smart Retry Intervals (exponential backoff)
 const unsigned long RETRY_INTERVAL_1 = 3600000;     // 1 hour
@@ -239,9 +239,42 @@ void setup() {
     Serial.println("Device ID: " + deviceId);
     Serial.println("Firestore Path: plantData/" + deviceId);
     
-    // Load configuration and pump state
+    // Load configuration first
     loadOrCreateConfig();
-    loadPumpState();
+    
+    // ⚠️ TESTING MODE: Force MIN_INTERVAL_SEC to 0 regardless of saved config
+    if (MIN_INTERVAL_SEC != 0) {
+        Serial.println("⚠️  TESTING MODE: Overriding MIN_INTERVAL_SEC");
+        Serial.printf("  Changed: %lu sec → 0 sec (NO SAFETY DELAY!)\n", MIN_INTERVAL_SEC);
+        MIN_INTERVAL_SEC = 0;
+        PUMP_SETTLE_MS = 5000;
+        
+        // Save updated config
+        JsonDocument doc;
+        doc["firebaseProjectId"] = firebaseProjectId;
+        doc["firebaseApiKey"] = firebaseApiKey;
+        doc["dryThreshold"] = DRY_THRESHOLD;
+        doc["wetThreshold"] = WET_THRESHOLD;
+        doc["pumpRunTime"] = PUMP_RUN_TIME;
+        doc["minIntervalSec"] = MIN_INTERVAL_SEC;
+        
+        File configFile = LittleFS.open(CONFIG_FILE, "w");
+        if (configFile) {
+            serializeJson(doc, configFile);
+            configFile.close();
+            Serial.println("  ✓ Config updated with new safety interval");
+        }
+    }
+    
+    // Reset pump state for immediate testing
+    if (LittleFS.exists(PUMP_STATE_FILE)) {
+        LittleFS.remove(PUMP_STATE_FILE);
+        Serial.println("  Pump state file deleted (fresh start)");
+    }
+    lastPumpEndEpoch = 0;
+    lockedFault = false;
+    noEffectCounter = 0;
+    savePumpState();
     
     // Setup WiFi
     setupWiFi();
@@ -542,6 +575,32 @@ void startConfigurationPortal() {
     setLedPattern(LED_ONLINE);
     retryCount = 0;
     nextRetryInterval = RETRY_INTERVAL_1;
+    
+    // Initialize NTP for accurate timestamps (UTC+0)
+    configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+    Serial.print("⏰ Syncing time with NTP");
+    
+    // Wait up to 10 seconds for time sync
+    int retries = 0;
+    while (time(nullptr) < 100000 && retries < 20) {
+        delay(500);
+        Serial.print(".");
+        retries++;
+    }
+    
+    time_t now = time(nullptr);
+    if (now >= 100000) {
+        Serial.println(" ✓");
+        Serial.printf("  Unix timestamp: %lu (GMT)\n", (unsigned long)now);
+        struct tm timeinfo;
+        gmtime_r(&now, &timeinfo);
+        Serial.printf("  Date/Time: %04d-%02d-%02d %02d:%02d:%02d UTC\n",
+                     timeinfo.tm_year + 1900, timeinfo.tm_mon + 1, timeinfo.tm_mday,
+                     timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
+    } else {
+        Serial.println(" ✗ FAILED");
+        Serial.println("  ⚠️  Timestamps will be 0 until sync succeeds");
+    }
 }
 
 void attemptWiFiConnection() {
@@ -594,21 +653,30 @@ void attemptWiFiConnection() {
         Serial.println("✓ WiFi connected");
         Serial.println("  IP: " + WiFi.localIP().toString());
         
-        // Initialize NTP for accurate timestamps
+        // Initialize NTP for accurate timestamps (UTC+0)
         configTime(0, 0, "pool.ntp.org", "time.nist.gov");
-        Serial.print("⏰ Syncing time with NTP...");
-        // Wait up to 5 seconds for time sync
+        Serial.print("⏰ Syncing time with NTP");
+        
+        // Wait up to 10 seconds for time sync
         int retries = 0;
-        while (time(nullptr) < 100000 && retries < 10) {
+        while (time(nullptr) < 100000 && retries < 20) {
             delay(500);
             Serial.print(".");
             retries++;
         }
-        if (time(nullptr) >= 100000) {
-            Serial.println(" ✓ Time synced");
-            Serial.printf("  Current time: %lu\n", time(nullptr));
+        
+        time_t now = time(nullptr);
+        if (now >= 100000) {
+            Serial.println(" ✓");
+            Serial.printf("  Unix timestamp: %lu (GMT)\n", (unsigned long)now);
+            struct tm timeinfo;
+            gmtime_r(&now, &timeinfo);
+            Serial.printf("  Date/Time: %04d-%02d-%02d %02d:%02d:%02d UTC\n",
+                         timeinfo.tm_year + 1900, timeinfo.tm_mon + 1, timeinfo.tm_mday,
+                         timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
         } else {
-            Serial.println(" ✗ Time sync failed");
+            Serial.println(" ✗ FAILED");
+            Serial.println("  ⚠️  Timestamps will be 0 until sync succeeds");
         }
         
         retryCount = 0;
