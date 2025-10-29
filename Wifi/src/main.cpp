@@ -118,7 +118,7 @@ const unsigned long DISPLAY_INTERVAL = 3000;        // 3 seconds
 const unsigned long WIFI_CHECK_INTERVAL = 5000;     // 5 seconds
 const unsigned long BUTTON_DEBOUNCE_MS = 50;        // 50ms debounce
 const unsigned long LONG_PRESS_MS = 5000;           // 5 second long press
-const unsigned long TRIPLE_PRESS_WINDOW = 2000;     // 2 second window for triple press
+const unsigned long TRIPLE_PRESS_WINDOW = 1500;     // 1.5 second window for triple press
 
 // Smart Retry Intervals (exponential backoff)
 const unsigned long RETRY_INTERVAL_1 = 3600000;     // 1 hour
