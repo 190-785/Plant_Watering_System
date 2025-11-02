@@ -1,23 +1,6 @@
 /*
- * ====================================================================
- * SMART IRRIGATION SYSTEM - PHASE 1 IMPLEMENTATION
- * Complete Design Per System Specification Document
- * ====================================================================
- * 
- * Features Implemented:
- * - Hardware: Button (D2), LED (D3), Pump (D1), Moisture Sensor (A0)
- * - Button Controls: Triple Press (WiFi Reset), Long Press (Clear Fault), Short Press (Manual Water)
- * - LED Status Indicators: Multi-pattern status display
- * - Pump Safety: minIntervalSec, no-effect detection, fault locking
- * - Persistent Storage: config.json (WiFi/Firebase), pump_state.json (pump history & faults)
- * - Device ID: Generated from MAC address
- * - WiFi: Smart retry with exponential backoff, non-blocking portal
- * - Firestore: Device-specific paths, logs, config sync, remote commands
- * - State Machine: AWAITING_CONFIG, ONLINE, OFFLINE, LOCKED_FAULT
- * 
- * Author: Auto-generated from System Design Specification
- * Version: 3.0 - Phase 1
- * ====================================================================
+ * Smart Irrigation System with WiFi and Firebase
+ * ESP8266-based automated plant watering with remote monitoring
  */
 
 #include <Arduino.h>
@@ -30,31 +13,23 @@
 #include <WiFiClientSecure.h>
 #include <time.h>  // For NTP time sync
 
-// ====================================================================
-// HARDWARE PIN CONFIGURATION
-// ====================================================================
+// Hardware pin configuration
 constexpr uint8_t PUMP_CTRL_PIN = D1;      // ULN2003 IN1
 constexpr uint8_t SENSOR_PIN = A0;          // Moisture sensor analog out
 constexpr uint8_t BUTTON_PIN = D2;          // Manual control button
 constexpr uint8_t LED_PIN = D3;             // Status LED
 
-// ====================================================================
-// FIREBASE CONFIGURATION
-// ====================================================================
+// Firebase configuration
 String firebaseProjectId = "bloom-watch-d6878";
 String firebaseApiKey = "YOURAPIKEY";
 String firebaseDatabaseURL = "YOURDBURL"; //The old ones have been revoked
 String deviceId = "";           // Generated from MAC address
 
-// ====================================================================
-// FILE SYSTEM PATHS
-// ====================================================================
+// File system paths
 const char* CONFIG_FILE = "/config.json";
 const char* PUMP_STATE_FILE = "/pump_state.json";
 
-// ====================================================================
-// DEVICE STATE MACHINE
-// ====================================================================
+// Device state machine
 enum DeviceState {
     AWAITING_CONFIG,    // No WiFi config, portal active
     ONLINE,             // Connected to WiFi and Firebase
@@ -63,9 +38,7 @@ enum DeviceState {
 };
 DeviceState deviceState = AWAITING_CONFIG;
 
-// ====================================================================
-// PUMP STATE MACHINE
-// ====================================================================
+// Pump state machine
 enum PumpState {
     MONITORING,         // Watching sensor, ready to water
     PUMP_RUNNING,       // Actively pumping water
@@ -73,9 +46,7 @@ enum PumpState {
 };
 PumpState pumpState = MONITORING;
 
-// ====================================================================
-// BUTTON STATE TRACKING
-// ====================================================================
+// Button state tracking
 enum ButtonAction {
     NONE,
     SHORT_PRESS,        // Manual watering
@@ -83,9 +54,7 @@ enum ButtonAction {
     TRIPLE_PRESS        // Force WiFi reset
 };
 
-// ====================================================================
-// LED BLINK PATTERNS
-// ====================================================================
+// LED blink patterns
 enum LedPattern {
     LED_OFF,                    // Device off or sleeping
     LED_PORTAL_ACTIVE,          // Fast double-blink (portal mode)
@@ -98,9 +67,7 @@ enum LedPattern {
 };
 LedPattern currentLedPattern = LED_OFF;
 
-// ====================================================================
-// CONFIGURATION PARAMETERS (defaults for testing)
-// ====================================================================
+// Configuration parameters (defaults for testing)
 uint16_t DRY_THRESHOLD = 520;           // Moisture level to trigger watering
 uint16_t WET_THRESHOLD = 420;           // Moisture level when soil is wet
 unsigned long PUMP_RUN_TIME = 2000;     // 2 seconds (minimal for testing)
@@ -108,9 +75,7 @@ unsigned long MIN_INTERVAL_SEC = 0;     // NO DELAY - for testing only! Set to 6
 uint8_t MAX_NO_EFFECT_REPEATS = 2;     // 2 consecutive failures triggers fault
 unsigned long PUMP_SETTLE_MS = 5000;    // 5 seconds wait after pump to re-read sensor (faster testing)
 
-// ====================================================================
-// TIMING CONSTANTS
-// ====================================================================
+// Timing constants
 const unsigned long PORTAL_TIMEOUT = 300000;        // 5 minutes
 const unsigned long DATA_SEND_INTERVAL = 5000;      // 5 seconds (faster logging for testing)
 const unsigned long CONFIG_CHECK_INTERVAL = 10000;  // 10 seconds (faster remote command check)
@@ -122,12 +87,8 @@ const unsigned long TRIPLE_PRESS_WINDOW = 800;      // 0.8 second window for tri
 
 // Smart Retry Intervals (exponential backoff)
 const unsigned long RETRY_INTERVAL_1 = 3600000;     // 1 hour
-const unsigned long RETRY_INTERVAL_2 = 21600000;    // 6 hours  
-const unsigned long RETRY_INTERVAL_3 = 86400000;    // 24 hours
-
-// ====================================================================
-// GLOBAL STATE VARIABLES
-// ====================================================================
+const unsigned long RETRY_INTERVAL_2 = 21600000;    // 6 hours
+const unsigned long RETRY_INTERVAL_3 = 86400000;    // 24 hours// Global state variables
 // WiFi & Connectivity
 WiFiManager wm;
 ESP8266WebServer server(80);
@@ -163,9 +124,7 @@ bool longPressHandled = false;
 bool ledState = false;
 unsigned long ledBlinkStart = 0;
 
-// ====================================================================
-// FUNCTION DECLARATIONS
-// ====================================================================
+// Function declarations
 // Device initialization
 void initializeFileSystem();
 void generateDeviceId();
@@ -212,9 +171,7 @@ String getDeviceStateString();
 String getPumpStateString();
 unsigned long getCurrentEpoch();
 
-// ====================================================================
-// SETUP
-// ====================================================================
+// Setup
 void setup() {
     Serial.begin(115200);
     delay(2000);
@@ -289,9 +246,7 @@ void setup() {
     Serial.println("====================================\n");
 }
 
-// ====================================================================
-// MAIN LOOP
-// ====================================================================
+// Main loop
 void loop() {
     unsigned long currentTime = millis();
     
@@ -400,9 +355,7 @@ void loop() {
     delay(10);  // Small delay for stability
 }
 
-// ====================================================================
-// FILE SYSTEM FUNCTIONS
-// ====================================================================
+// File system functions
 void initializeFileSystem() {
     if (!LittleFS.begin()) {
         Serial.println("✗ Failed to mount LittleFS");
@@ -522,9 +475,7 @@ void savePumpState() {
     stateFile.close();
 }
 
-// ====================================================================
-// WiFi MANAGEMENT
-// ====================================================================
+// WiFi management
 void setupWiFi() {
     WiFi.mode(WIFI_STA);
     WiFi.setSleepMode(WIFI_NONE_SLEEP);
@@ -742,9 +693,7 @@ void handleSmartRetry() {
     }
 }
 
-// ====================================================================
-// HARDWARE I/O - BUTTON
-// ====================================================================
+// Hardware I/O - Button
 ButtonAction readButton() {
     static bool lastButtonState = HIGH;  // Pulled up = HIGH when not pressed
     bool currentButtonState = digitalRead(BUTTON_PIN);
@@ -817,9 +766,7 @@ ButtonAction readButton() {
     return NONE;
 }
 
-// ====================================================================
-// HARDWARE I/O - LED
-// ====================================================================
+// Hardware I/O - LED
 void setLedPattern(LedPattern pattern) {
     currentLedPattern = pattern;
     ledBlinkStart = millis();
@@ -888,9 +835,7 @@ void updateLED() {
     }
 }
 
-// ====================================================================
-// PUMP CONTROL
-// ====================================================================
+// Pump control
 void handlePumpStateMachine() {
     unsigned long currentTime = millis();
     
@@ -1029,9 +974,7 @@ void checkPumpEffectiveness() {
     Serial.println("└─────────────────────────────────────┘\n");
 }
 
-// ====================================================================
-// FIRESTORE INTEGRATION
-// ====================================================================
+// Firestore integration
 void syncWithFirestore() {
     uint16_t moisture = analogRead(SENSOR_PIN);
     String pumpStatus = getPumpStateString();
@@ -1318,9 +1261,7 @@ void logEventToFirestore(const String& eventType, const String& details) {
     https.end();
 }
 
-// ====================================================================
-// WEB SERVER
-// ====================================================================
+// Web server
 void setupWebServer() {
     server.on("/", handleRoot);
     server.on("/status", HTTP_GET, handleGetStatus);
@@ -1436,9 +1377,7 @@ void handleResetWiFi() {
     ESP.restart();
 }
 
-// ====================================================================
-// UTILITY FUNCTIONS
-// ====================================================================
+// Utility functions
 String getDeviceStateString() {
     switch (deviceState) {
         case AWAITING_CONFIG: return "AWAITING_CONFIG";
