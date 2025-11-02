@@ -42,8 +42,8 @@ constexpr uint8_t LED_PIN = D3;             // Status LED
 // FIREBASE CONFIGURATION
 // ====================================================================
 String firebaseProjectId = "bloom-watch-d6878";
-String firebaseApiKey = "AIzaSyAOBmNKAPf9I-leu0mED1ESK8x9UMrL25g";
-String firebaseDatabaseURL = "https://bloom-watch-d6878-default-rtdb.firebaseio.com";
+String firebaseApiKey = "YOURAPIKEY";
+String firebaseDatabaseURL = "YOURDBURL"; //The old ones have been revoked
 String deviceId = "";           // Generated from MAC address
 
 // ====================================================================
