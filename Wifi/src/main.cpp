@@ -67,19 +67,19 @@ enum LedPattern {
 };
 LedPattern currentLedPattern = LED_OFF;
 
-// Configuration parameters (defaults for testing)
+// Configuration parameters (can be updated via Firestore)
 uint16_t DRY_THRESHOLD = 520;           // Moisture level to trigger watering
 uint16_t WET_THRESHOLD = 420;           // Moisture level when soil is wet
-unsigned long PUMP_RUN_TIME = 2000;     // 2 seconds (minimal for testing)
-unsigned long MIN_INTERVAL_SEC = 0;     // NO DELAY - for testing only! Set to 60+ in production
+unsigned long PUMP_RUN_TIME = 2000;     // 2 seconds pump runtime
+unsigned long MIN_INTERVAL_SEC = 60;    // 60 seconds minimum between pump activations (production default)
 uint8_t MAX_NO_EFFECT_REPEATS = 2;     // 2 consecutive failures triggers fault
-unsigned long PUMP_SETTLE_MS = 5000;    // 5 seconds wait after pump to re-read sensor (faster testing)
+unsigned long PUMP_SETTLE_MS = 10000;   // 10 seconds wait after pump to re-read sensor
 
 // Timing constants
 const unsigned long PORTAL_TIMEOUT = 300000;        // 5 minutes
-const unsigned long DATA_SEND_INTERVAL = 5000;      // 5 seconds (faster logging for testing)
-const unsigned long CONFIG_CHECK_INTERVAL = 10000;  // 10 seconds (faster remote command check)
-const unsigned long DISPLAY_INTERVAL = 2000;        // 2 seconds (more frequent status updates)
+const unsigned long DATA_SEND_INTERVAL = 30000;     // 30 seconds (data logging interval)
+const unsigned long CONFIG_CHECK_INTERVAL = 10000;  // 10 seconds (check for Firestore config updates)
+const unsigned long DISPLAY_INTERVAL = 5000;        // 5 seconds (status display interval)
 const unsigned long WIFI_CHECK_INTERVAL = 5000;     // 5 seconds
 const unsigned long BUTTON_DEBOUNCE_MS = 50;        // 50ms debounce
 const unsigned long LONG_PRESS_MS = 5000;           // 5 second long press
@@ -196,42 +196,11 @@ void setup() {
     Serial.println("Device ID: " + deviceId);
     Serial.println("Firestore Path: plantData/" + deviceId);
     
-    // Load configuration first
+    // Load configuration from LittleFS
     loadOrCreateConfig();
     
-    // ⚠️ TESTING MODE: Force MIN_INTERVAL_SEC to 0 regardless of saved config
-    if (MIN_INTERVAL_SEC != 0) {
-        Serial.println("⚠️  TESTING MODE: Overriding MIN_INTERVAL_SEC");
-        Serial.printf("  Changed: %lu sec → 0 sec (NO SAFETY DELAY!)\n", MIN_INTERVAL_SEC);
-        MIN_INTERVAL_SEC = 0;
-        PUMP_SETTLE_MS = 5000;
-        
-        // Save updated config
-        JsonDocument doc;
-        doc["firebaseProjectId"] = firebaseProjectId;
-        doc["firebaseApiKey"] = firebaseApiKey;
-        doc["dryThreshold"] = DRY_THRESHOLD;
-        doc["wetThreshold"] = WET_THRESHOLD;
-        doc["pumpRunTime"] = PUMP_RUN_TIME;
-        doc["minIntervalSec"] = MIN_INTERVAL_SEC;
-        
-        File configFile = LittleFS.open(CONFIG_FILE, "w");
-        if (configFile) {
-            serializeJson(doc, configFile);
-            configFile.close();
-            Serial.println("  ✓ Config updated with new safety interval");
-        }
-    }
-    
-    // Reset pump state for immediate testing
-    if (LittleFS.exists(PUMP_STATE_FILE)) {
-        LittleFS.remove(PUMP_STATE_FILE);
-        Serial.println("  Pump state file deleted (fresh start)");
-    }
-    lastPumpEndEpoch = 0;
-    lockedFault = false;
-    noEffectCounter = 0;
-    savePumpState();
+    // Load pump state (maintains history across reboots)
+    loadPumpState();
     
     // Setup WiFi
     setupWiFi();
@@ -243,6 +212,12 @@ void setup() {
     Serial.println("\n====================================");
     Serial.println("INITIALIZATION COMPLETE");
     Serial.println("State: " + getDeviceStateString());
+    Serial.printf("Safety Interval: %lu seconds\n", MIN_INTERVAL_SEC);
+    Serial.println("====================================");
+    Serial.println("ℹ Adjust MIN_INTERVAL_SEC via:");
+    Serial.println("  • Web App Dashboard");
+    Serial.println("  • Firestore: plantData/" + deviceId + "/config/settings");
+    Serial.println("  • Set minIntervalSec to 0-3600 seconds");
     Serial.println("====================================\n");
 }
 
