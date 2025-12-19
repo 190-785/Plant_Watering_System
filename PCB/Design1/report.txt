@@ -1,0 +1,151 @@
+Info: Processing symbol 'D1:LED_THT:LED_D5.0mm'.
+Info: Processing symbol 'J1:Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical'.
+Info: Processing symbol 'J2:Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical'.
+Info: Processing symbol 'J3:Connector_PinHeader_2.54mm:PinHeader_1x15_P2.54mm_Vertical'.
+Info: Processing symbol 'J4:Connector_PinHeader_2.54mm:PinHeader_1x15_P2.54mm_Vertical'.
+Info: Processing symbol 'SW1:Button_Switch_THT:SW_PUSH-12mm'.
+Info: Processing symbol 'U2:Package_DIP:DIP-16_W7.62mm'.
+Info: Total warnings: 0, errors: 0.
+Updated D1 symbol association from  to /114ef15a-0261-4e1b-b983-54d8c8b455e0.
+Updated D1 fields.
+Updated D1 sheetname to '/'.
+Updated D1 sheetfile to 'Design1.kicad_sch'.
+Updated D1 footprint filters to 'LED* LED_SMD:* LED_THT:*'.
+Add net /3V3.
+Connected D1 pin 1 to /3V3.
+Add net unconnected-(D1-A-Pad2).
+Connected D1 pin 2 to unconnected-(D1-A-Pad2).
+Added J1 (footprint 'Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical').
+Changed REF** reference designator to J1.
+Changed J1 value from PinHeader_1x02_P2.54mm_Vertical to Screw_Terminal_01x02.
+Updated J1 symbol association from  to /084adaf7-5e28-4bd0-8539-3aa2166aa7e4.
+Updated J1 sheetname to '/'.
+Updated J1 sheetfile to 'Design1.kicad_sch'.
+Updated J1 footprint filters to 'TerminalBlock*:*'.
+Connected J1 pin 1 to /3V3.
+Connected J1 pin 2 to /3V3.
+Added J2 (footprint 'Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical').
+Changed REF** reference designator to J2.
+Changed J2 value from PinHeader_1x03_P2.54mm_Vertical to Screw_Terminal_01x03.
+Updated J2 symbol association from  to /2fd5f57d-fc6a-4e79-a7f4-4b87a4e682fe.
+Updated J2 fields.
+Updated J2 sheetname to '/'.
+Updated J2 sheetfile to 'Design1.kicad_sch'.
+Updated J2 footprint filters to 'TerminalBlock*:*'.
+Connected J2 pin 2 to /3V3.
+Connected J2 pin 1 to /3V3.
+Connected J2 pin 3 to /3V3.
+Updated J1 fields.
+Added J3 (footprint 'Connector_PinHeader_2.54mm:PinHeader_1x15_P2.54mm_Vertical').
+Changed REF** reference designator to J3.
+Changed J3 value from PinHeader_1x15_P2.54mm_Vertical to Conn_01x15.
+Updated J3 symbol association from  to /b5223ff5-7ecc-4eef-a9c0-85b9987116a3.
+Updated J3 fields.
+Updated J3 sheetname to '/'.
+Updated J3 sheetfile to 'Design1.kicad_sch'.
+Updated J3 footprint filters to 'Connector*:*_1x??_*'.
+Add net /RX.
+Connected J3 pin 4 to /RX.
+Connected J3 pin 9 to /3V3.
+Connected J3 pin 10 to /3V3.
+Add net /TX.
+Connected J3 pin 3 to /TX.
+Connected J3 pin 14 to /3V3.
+Add net /D8.
+Connected J3 pin 5 to /D8.
+Connected J3 pin 12 to /3V3.
+Add net /D5.
+Connected J3 pin 8 to /D5.
+Add net /D0&apos;.
+Connected J3 pin 15 to /D0&apos;.
+Add net /D4.
+Connected J3 pin 11 to /D4.
+Add net /D6.
+Connected J3 pin 7 to /D6.
+Add net /D7.
+Connected J3 pin 6 to /D7.
+Connected J3 pin 1 to /3V3.
+Add net /D2.
+Connected J3 pin 13 to /D2.
+Connected J3 pin 2 to /3V3.
+Added J4 (footprint 'Connector_PinHeader_2.54mm:PinHeader_1x15_P2.54mm_Vertical').
+Changed REF** reference designator to J4.
+Changed J4 value from PinHeader_1x15_P2.54mm_Vertical to Conn_01x15.
+Updated J4 symbol association from  to /26412373-530a-4317-82af-74bdb8bcc9cc.
+Updated J4 fields.
+Updated J4 sheetname to '/'.
+Updated J4 sheetfile to 'Design1.kicad_sch'.
+Updated J4 footprint filters to 'Connector*:*_1x??_*'.
+Connected J4 pin 2 to /3V3.
+Connected J4 pin 6 to /3V3.
+Connected J4 pin 8 to /3V3.
+Connected J4 pin 12 to /3V3.
+Connected J4 pin 13 to /3V3.
+Connected J4 pin 15 to /3V3.
+Connected J4 pin 9 to /3V3.
+Connected J4 pin 5 to /3V3.
+Connected J4 pin 4 to /3V3.
+Connected J4 pin 14 to /3V3.
+Connected J4 pin 11 to /3V3.
+Connected J4 pin 1 to /3V3.
+Connected J4 pin 10 to /3V3.
+Add net unconnected-(J4-Pin_3-Pad3).
+Connected J4 pin 3 to unconnected-(J4-Pin_3-Pad3).
+Connected J4 pin 7 to /3V3.
+Added D1 (footprint 'LED_THT:LED_D5.0mm').
+Added SW1 (footprint 'Button_Switch_THT:SW_PUSH-12mm').
+Changed REF** reference designator to SW1.
+Changed SW1 value from SW_PUSH-12mm to SW_Push.
+Updated SW1 symbol association from  to /c2e4434d-4b0b-49ac-be75-4c2e37a08468.
+Updated SW1 fields.
+Updated SW1 sheetname to '/'.
+Updated SW1 sheetfile to 'Design1.kicad_sch'.
+Connected SW1 pin 2 to /3V3.
+Connected SW1 pin 1 to /3V3.
+Connected SW1 pin 1 to /3V3.
+Connected SW1 pin 2 to /3V3.
+Changed REF** reference designator to D1.
+Added U2 (footprint 'Package_DIP:DIP-16_W7.62mm').
+Changed REF** reference designator to U2.
+Changed U2 value from DIP-16_W7.62mm to ULN2003.
+Updated U2 symbol association from  to /411cef7f-ac7a-48d0-bb4d-53be7344f0cd.
+Changed D1 value from LED_D5.0mm to LED.
+Updated U2 sheetname to '/'.
+Updated U2 sheetfile to 'Design1.kicad_sch'.
+Updated U2 footprint filters to 'DIP*W7.62mm* SOIC*3.9x9.9mm*P1.27mm* SSOP*4.4x5.2mm*P0.65mm* TSSOP*4.4x5mm*P0.65mm* SOIC*W*5.3x10.2mm*P1.27mm*'.
+Add net unconnected-(U2-I4-Pad4).
+Connected U2 pin 4 to unconnected-(U2-I4-Pad4).
+Add net unconnected-(U2-I6-Pad6).
+Connected U2 pin 6 to unconnected-(U2-I6-Pad6).
+Add net unconnected-(U2-I2-Pad2).
+Connected U2 pin 2 to unconnected-(U2-I2-Pad2).
+Add net unconnected-(U2-O2-Pad15).
+Connected U2 pin 15 to unconnected-(U2-O2-Pad15).
+Add net unconnected-(U2-O7-Pad10).
+Connected U2 pin 10 to unconnected-(U2-O7-Pad10).
+Add net unconnected-(U2-COM-Pad9).
+Connected U2 pin 9 to unconnected-(U2-COM-Pad9).
+Connected U2 pin 1 to /3V3.
+Add net unconnected-(U2-O3-Pad14).
+Updated U2 fields.
+Add net unconnected-(U2-O6-Pad11).
+Connected U2 pin 11 to unconnected-(U2-O6-Pad11).
+Add net unconnected-(U2-GND-Pad8).
+Connected U2 pin 8 to unconnected-(U2-GND-Pad8).
+Add net unconnected-(U2-O5-Pad12).
+Connected U2 pin 12 to unconnected-(U2-O5-Pad12).
+Add net unconnected-(U2-I3-Pad3).
+Connected U2 pin 3 to unconnected-(U2-I3-Pad3).
+Add net unconnected-(U2-I7-Pad7).
+Connected U2 pin 7 to unconnected-(U2-I7-Pad7).
+Add net unconnected-(U2-O4-Pad13).
+Connected U2 pin 13 to unconnected-(U2-O4-Pad13).
+Connected U2 pin 16 to /3V3.
+Add net unconnected-(U2-I5-Pad5).
+Connected U2 pin 5 to unconnected-(U2-I5-Pad5).
+
+
+Connected U2 pin 14 to unconnected-(U2-O3-Pad14).
+
+
+Info: Total warnings: 0, errors: 0.
