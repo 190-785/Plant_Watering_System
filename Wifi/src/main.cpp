@@ -67,19 +67,19 @@ enum LedPattern {
 };
 LedPattern currentLedPattern = LED_OFF;
 
-// Configuration parameters (defaults for testing)
+// Configuration parameters (can be updated via Firestore)
 uint16_t DRY_THRESHOLD = 520;           // Moisture level to trigger watering
 uint16_t WET_THRESHOLD = 420;           // Moisture level when soil is wet
-unsigned long PUMP_RUN_TIME = 2000;     // 2 seconds (minimal for testing)
-unsigned long MIN_INTERVAL_SEC = 0;     // NO DELAY - for testing only! Set to 60+ in production
-uint8_t MAX_NO_EFFECT_REPEATS = 2;     // 2 consecutive failures triggers fault
-unsigned long PUMP_SETTLE_MS = 5000;    // 5 seconds wait after pump to re-read sensor (faster testing)
+unsigned long PUMP_RUN_TIME = 2000;     // 2 seconds pump runtime
+unsigned long MIN_INTERVAL_SEC = 30;    // 60 seconds minimum between pump activations (production default)
+uint8_t MAX_NO_EFFECT_REPEATS = 10;     // 10 consecutive failures triggers fault (increased for stability)
+unsigned long PUMP_SETTLE_MS = 20000;   // 20 seconds wait after pump to re-read sensor
 
 // Timing constants
 const unsigned long PORTAL_TIMEOUT = 300000;        // 5 minutes
-const unsigned long DATA_SEND_INTERVAL = 5000;      // 5 seconds (faster logging for testing)
-const unsigned long CONFIG_CHECK_INTERVAL = 10000;  // 10 seconds (faster remote command check)
-const unsigned long DISPLAY_INTERVAL = 2000;        // 2 seconds (more frequent status updates)
+const unsigned long DATA_SEND_INTERVAL = 30000;     // 30 seconds (data logging interval)
+const unsigned long CONFIG_CHECK_INTERVAL = 5000;  // 5 seconds (check for Firestore config updates)
+const unsigned long DISPLAY_INTERVAL = 5000;        // 5 seconds (status display interval)
 const unsigned long WIFI_CHECK_INTERVAL = 5000;     // 5 seconds
 const unsigned long BUTTON_DEBOUNCE_MS = 50;        // 50ms debounce
 const unsigned long LONG_PRESS_MS = 5000;           // 5 second long press
@@ -196,42 +196,11 @@ void setup() {
     Serial.println("Device ID: " + deviceId);
     Serial.println("Firestore Path: plantData/" + deviceId);
     
-    // Load configuration first
+    // Load configuration from LittleFS
     loadOrCreateConfig();
     
-    // ⚠️ TESTING MODE: Force MIN_INTERVAL_SEC to 0 regardless of saved config
-    if (MIN_INTERVAL_SEC != 0) {
-        Serial.println("⚠️  TESTING MODE: Overriding MIN_INTERVAL_SEC");
-        Serial.printf("  Changed: %lu sec → 0 sec (NO SAFETY DELAY!)\n", MIN_INTERVAL_SEC);
-        MIN_INTERVAL_SEC = 0;
-        PUMP_SETTLE_MS = 5000;
-        
-        // Save updated config
-        JsonDocument doc;
-        doc["firebaseProjectId"] = firebaseProjectId;
-        doc["firebaseApiKey"] = firebaseApiKey;
-        doc["dryThreshold"] = DRY_THRESHOLD;
-        doc["wetThreshold"] = WET_THRESHOLD;
-        doc["pumpRunTime"] = PUMP_RUN_TIME;
-        doc["minIntervalSec"] = MIN_INTERVAL_SEC;
-        
-        File configFile = LittleFS.open(CONFIG_FILE, "w");
-        if (configFile) {
-            serializeJson(doc, configFile);
-            configFile.close();
-            Serial.println("  ✓ Config updated with new safety interval");
-        }
-    }
-    
-    // Reset pump state for immediate testing
-    if (LittleFS.exists(PUMP_STATE_FILE)) {
-        LittleFS.remove(PUMP_STATE_FILE);
-        Serial.println("  Pump state file deleted (fresh start)");
-    }
-    lastPumpEndEpoch = 0;
-    lockedFault = false;
-    noEffectCounter = 0;
-    savePumpState();
+    // Load pump state (maintains history across reboots)
+    loadPumpState();
     
     // Setup WiFi
     setupWiFi();
@@ -243,6 +212,12 @@ void setup() {
     Serial.println("\n====================================");
     Serial.println("INITIALIZATION COMPLETE");
     Serial.println("State: " + getDeviceStateString());
+    Serial.printf("Safety Interval: %lu seconds\n", MIN_INTERVAL_SEC);
+    Serial.println("====================================");
+    Serial.println("ℹ Adjust MIN_INTERVAL_SEC via:");
+    Serial.println("  • Web App Dashboard");
+    Serial.println("  • Firestore: plantData/" + deviceId + "/config/settings");
+    Serial.println("  • Set minIntervalSec to 0-3600 seconds");
     Serial.println("====================================\n");
 }
 
@@ -310,7 +285,8 @@ void loop() {
     }
     
     // Firestore sync (only when online)
-    if (wifiConnected && deviceState == ONLINE) {
+    // Allow sync even in LOCKED_FAULT state so we can receive clear commands
+    if (wifiConnected && (deviceState == ONLINE || deviceState == LOCKED_FAULT)) {
         // Send data periodically
         if (currentTime - lastDataSend >= DATA_SEND_INTERVAL) {
             syncWithFirestore();
@@ -341,8 +317,14 @@ void loop() {
         if (lockedFault) Serial.print(" | ⚠️ FAULT");
         if (wifiConnected) Serial.printf(" | RSSI:%ddBm", WiFi.RSSI());
         if (pumpState == PUMP_WAITING) {
-            unsigned long timeSincePump = getCurrentEpoch() - lastPumpEndEpoch;
-            Serial.printf(" | Next:%lus", MIN_INTERVAL_SEC - timeSincePump);
+            unsigned long currentEpoch = getCurrentEpoch();
+            if (currentEpoch > 0 && lastPumpEndEpoch > 0 && currentEpoch >= lastPumpEndEpoch) {
+                unsigned long timeSincePump = currentEpoch - lastPumpEndEpoch;
+                if (timeSincePump < MIN_INTERVAL_SEC) {
+                    unsigned long remaining = MIN_INTERVAL_SEC - timeSincePump;
+                    Serial.printf(" | Next:%lus", remaining);
+                }
+            }
         }
         Serial.println();
         
@@ -931,8 +913,9 @@ void activatePump(const String& method) {
 }
 
 void checkPumpEffectiveness() {
+    yield(); // Prevent watchdog timeout
     uint16_t moistureAfter = analogRead(SENSOR_PIN);
-    int16_t delta = moistureAfter - moistureBeforePump;  // Positive = wetter
+    int16_t delta = moistureAfter - moistureBeforePump;  // For capacitive sensors: negative = wetter
     
     Serial.println("\n┌─────────────────────────────────────┐");
     Serial.println("│ PUMP EFFECTIVENESS CHECK            │");
@@ -940,10 +923,17 @@ void checkPumpEffectiveness() {
     Serial.printf("│ After:  %-27d│\n", moistureAfter);
     Serial.printf("│ Delta:  %-27d│\n", delta);
     
-    // Define minimum acceptable delta (soil should be at least 30 points wetter)
-    const int16_t MIN_DELTA = 30;
+    // For capacitive sensors: higher=dry, lower=wet
+    // We expect moisture to DECREASE (become wetter)
+    // So delta (After - Before) should be negative
+    // Effective if: moistureAfter < moistureBeforePump - 5
+    // i.e. delta <= -5
     
-    if (delta < MIN_DELTA) {
+    const int16_t REQUIRED_DROP = 5; // Must drop by at least 5 units
+    
+    bool effective = (moistureBeforePump - moistureAfter) >= REQUIRED_DROP;
+    
+    if (!effective) {
         noEffectCounter++;
         Serial.printf("│ ⚠️  NO EFFECT! Count: %d/%d%-10s│\n", 
                       noEffectCounter, MAX_NO_EFFECT_REPEATS, "");
@@ -1043,6 +1033,8 @@ void updateMainDeviceStatus(uint16_t moisture, const String& pumpStatus) {
     client.setInsecure();
     
     // Update main device document with heartbeat
+    // NOTE: We intentionally update status even in LOCKED_FAULT state
+    // so the app knows the device is online and can send clear commands
     String url = "https://firestore.googleapis.com/v1/projects/" + firebaseProjectId + 
                  "/databases/(default)/documents/plantData/" + deviceId + 
                  "?updateMask.fieldPaths=currentMoisture" +

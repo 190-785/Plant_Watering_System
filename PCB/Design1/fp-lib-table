@@ -1,0 +1,11 @@
+(fp_lib_table
+  (version 7)
+  (lib (name "SL_3Dmodels")(type "KiCad")(uri "C:/Users/Admin/Downloads/KiCad-Simple-Libraries-master/KiCad-Simple-Libraries-master/footprints/SL_3Dmodels.pretty")(options "")(descr ""))
+  (lib (name "SL_Breakout_Boards")(type "KiCad")(uri "C:/Users/Admin/Downloads/KiCad-Simple-Libraries-master/KiCad-Simple-Libraries-master/footprints/SL_Breakout_Boards.pretty")(options "")(descr ""))
+  (lib (name "SL_Connectors")(type "KiCad")(uri "C:/Users/Admin/Downloads/KiCad-Simple-Libraries-master/KiCad-Simple-Libraries-master/footprints/SL_Connectors.pretty")(options "")(descr ""))
+  (lib (name "SL_Development_Boards")(type "KiCad")(uri "C:/Users/Admin/Downloads/KiCad-Simple-Libraries-master/KiCad-Simple-Libraries-master/footprints/SL_Development_Boards.pretty")(options "")(descr ""))
+  (lib (name "SL_Devices")(type "KiCad")(uri "C:/Users/Admin/Downloads/KiCad-Simple-Libraries-master/KiCad-Simple-Libraries-master/footprints/SL_Devices.pretty")(options "")(descr ""))
+  (lib (name "SL_Footprints")(type "KiCad")(uri "C:/Users/Admin/Downloads/KiCad-Simple-Libraries-master/KiCad-Simple-Libraries-master/footprints/SL_Footprints.pretty")(options "")(descr ""))
+  (lib (name "SL_Jumpers")(type "KiCad")(uri "C:/Users/Admin/Downloads/KiCad-Simple-Libraries-master/KiCad-Simple-Libraries-master/footprints/SL_Jumpers.pretty")(options "")(descr ""))
+  (lib (name "SL_Mechanical")(type "KiCad")(uri "C:/Users/Admin/Downloads/KiCad-Simple-Libraries-master/KiCad-Simple-Libraries-master/footprints/SL_Mechanical.pretty")(options "")(descr ""))
+)

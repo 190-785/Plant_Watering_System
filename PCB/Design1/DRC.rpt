@@ -1,0 +1,146 @@
+** Drc report for Design1.kicad_pcb **
+** Created on 2025-08-23T19:54:20+0530 **
+
+** Found 34 DRC violations **
+[clearance]: Clearance violation (netclass 'Default' clearance 0.2000 mm; actual 0.0914 mm)
+    Rule: netclass 'Default'; error
+    @(137.9036 mm, 93.2440 mm): Track [/D3] on B.Cu, length 0.9328 mm
+    @(133.4440 mm, 89.4440 mm): Track [/GND] on B.Cu, length 6.9664 mm
+[clearance]: Clearance violation (netclass 'Default' clearance 0.2000 mm; actual 0.0760 mm)
+    Rule: netclass 'Default'; error
+    @(133.4440 mm, 72.4160 mm): Track [/GND] on B.Cu, length 17.0280 mm
+    @(133.8950 mm, 89.2354 mm): Track [/D3] on B.Cu, length 5.6690 mm
+[clearance]: Clearance violation (netclass 'Default' clearance 0.2000 mm; actual 0.0914 mm)
+    Rule: netclass 'Default'; error
+    @(133.4440 mm, 89.4440 mm): Track [/GND] on B.Cu, length 6.9664 mm
+    @(133.8950 mm, 89.2354 mm): Track [/D3] on B.Cu, length 5.6690 mm
+[clearance]: Clearance violation (netclass 'Default' clearance 0.2000 mm; actual 0.0914 mm)
+    Rule: netclass 'Default'; error
+    @(133.8950 mm, 87.0850 mm): Track [/D3] on B.Cu, length 2.1504 mm
+    @(133.4440 mm, 89.4440 mm): Track [/GND] on B.Cu, length 6.9664 mm
+[clearance]: Clearance violation (netclass 'Default' clearance 0.2000 mm; actual 0.0760 mm)
+    Rule: netclass 'Default'; error
+    @(137.2745 mm, 60.9600 mm): Track [/3V3] on B.Cu, length 14.3684 mm
+    @(137.3600 mm, 63.5000 mm): PTH pad 1 [/D2] of SW1
+[clearance]: Clearance violation (netclass 'Default' clearance 0.2000 mm; actual 0.0760 mm)
+    Rule: netclass 'Default'; error
+    @(133.8950 mm, 87.0850 mm): Track [/D3] on B.Cu, length 2.1504 mm
+    @(133.4440 mm, 72.4160 mm): Track [/GND] on B.Cu, length 17.0280 mm
+[clearance]: Clearance violation (netclass 'Default' clearance 0.2000 mm; actual 0.0760 mm)
+    Rule: netclass 'Default'; error
+    @(138.1840 mm, 82.7960 mm): Track [/D3] on B.Cu, length 6.0656 mm
+    @(133.4440 mm, 72.4160 mm): Track [/GND] on B.Cu, length 17.0280 mm
+[clearance]: Clearance violation (netclass 'Default' clearance 0.2000 mm; actual 0.0760 mm)
+    Rule: netclass 'Default'; error
+    @(152.5700 mm, 78.2800 mm): PTH pad 2 [/D3] of D1
+    @(153.7960 mm, 82.9140 mm): Track [/3V3] on B.Cu, length 8.1100 mm
+[clearance]: Clearance violation (netclass 'Default' clearance 0.2000 mm; actual 0.1970 mm)
+    Rule: netclass 'Default'; error
+    @(137.3600 mm, 68.5000 mm): Track [/GND] on B.Cu, length 5.5381 mm
+    @(133.6440 mm, 67.2160 mm): Track [/D2] on B.Cu, length 4.1911 mm
+[clearance]: Clearance violation (netclass 'Default' clearance 0.2000 mm; actual 0.1970 mm)
+    Rule: netclass 'Default'; error
+    @(137.3600 mm, 68.5000 mm): Track [/GND] on B.Cu, length 5.5381 mm
+    @(133.6440 mm, 71.4071 mm): Track [/D2] on B.Cu, length 1.5229 mm
+[clearance]: Clearance violation (netclass 'Default' clearance 0.2000 mm; actual 0.0760 mm)
+    Rule: netclass 'Default'; error
+    @(153.7960 mm, 78.0329 mm): Track [/VIN] on F.Cu, length 17.0911 mm
+    @(152.5700 mm, 78.2800 mm): PTH pad 2 [/D3] of D1
+[clearance]: Clearance violation (netclass 'Default' clearance 0.2000 mm; actual 0.1970 mm)
+    Rule: netclass 'Default'; error
+    @(133.6440 mm, 71.4071 mm): Track [/D2] on B.Cu, length 1.5229 mm
+    @(133.4440 mm, 72.4160 mm): Track [/GND] on B.Cu, length 17.0280 mm
+[clearance]: Clearance violation (netclass 'Default' clearance 0.2000 mm; actual 0.0760 mm)
+    Rule: netclass 'Default'; error
+    @(130.9040 mm, 62.1360 mm): Track [/3V3] on F.Cu, length 20.5080 mm
+    @(132.0800 mm, 73.6600 mm): PTH pad 6 [/D7] of J3
+[clearance]: Clearance violation (netclass 'Default' clearance 0.2000 mm; actual 0.0760 mm)
+    Rule: netclass 'Default'; error
+    @(130.9040 mm, 62.1360 mm): Track [/3V3] on F.Cu, length 20.5080 mm
+    @(132.0800 mm, 76.2000 mm): PTH pad 7 [/D6] of J3
+[clearance]: Clearance violation (netclass 'Default' clearance 0.2000 mm; actual 0.0760 mm)
+    Rule: netclass 'Default'; error
+    @(158.6560 mm, 74.1471 mm): Track [/VIN] on F.Cu, length 0.9742 mm
+    @(157.4800 mm, 73.6600 mm): PTH pad 6 [/GND] of J4
+[clearance]: Clearance violation (netclass 'Default' clearance 0.2000 mm; actual 0.0760 mm)
+    Rule: netclass 'Default'; error
+    @(130.9040 mm, 62.1360 mm): Track [/3V3] on F.Cu, length 20.5080 mm
+    @(132.0800 mm, 78.7400 mm): PTH pad 8 [/D5] of J3
+[clearance]: Clearance violation (netclass 'Default' clearance 0.2000 mm; actual 0.0760 mm)
+    Rule: netclass 'Default'; error
+    @(157.9671 mm, 74.8360 mm): Track [/VIN] on F.Cu, length 0.9742 mm
+    @(157.4800 mm, 73.6600 mm): PTH pad 6 [/GND] of J4
+[clearance]: Clearance violation (netclass 'Default' clearance 0.2000 mm; actual 0.0760 mm)
+    Rule: netclass 'Default'; error
+    @(130.9040 mm, 62.1360 mm): Track [/3V3] on F.Cu, length 20.5080 mm
+    @(132.0800 mm, 66.0400 mm): PTH pad 3 [/TX] of J3
+[clearance]: Clearance violation (netclass 'Default' clearance 0.2000 mm; actual 0.0760 mm)
+    Rule: netclass 'Default'; error
+    @(158.6560 mm, 62.1360 mm): Track [/VIN] on F.Cu, length 12.0111 mm
+    @(157.4800 mm, 66.0400 mm): PTH pad 3 [/RST] of J4
+[clearance]: Clearance violation (netclass 'Default' clearance 0.2000 mm; actual 0.0760 mm)
+    Rule: netclass 'Default'; error
+    @(158.6560 mm, 62.1360 mm): Track [/VIN] on F.Cu, length 12.0111 mm
+    @(157.4800 mm, 63.5000 mm): PTH pad 2 [/GND] of J4
+[clearance]: Clearance violation (netclass 'Default' clearance 0.2000 mm; actual 0.0760 mm)
+    Rule: netclass 'Default'; error
+    @(132.0800 mm, 63.5000 mm): PTH pad 2 [/GND] of J3
+    @(130.9040 mm, 62.1360 mm): Track [/3V3] on F.Cu, length 20.5080 mm
+[clearance]: Clearance violation (netclass 'Default' clearance 0.2000 mm; actual 0.0760 mm)
+    Rule: netclass 'Default'; error
+    @(158.6560 mm, 62.1360 mm): Track [/VIN] on F.Cu, length 12.0111 mm
+    @(157.4800 mm, 73.6600 mm): PTH pad 6 [/GND] of J4
+[clearance]: Clearance violation (netclass 'Default' clearance 0.2000 mm; actual 0.0760 mm)
+    Rule: netclass 'Default'; error
+    @(132.0800 mm, 68.5800 mm): PTH pad 4 [/RX] of J3
+    @(130.9040 mm, 62.1360 mm): Track [/3V3] on F.Cu, length 20.5080 mm
+[clearance]: Clearance violation (netclass 'Default' clearance 0.2000 mm; actual 0.0760 mm)
+    Rule: netclass 'Default'; error
+    @(158.6560 mm, 62.1360 mm): Track [/VIN] on F.Cu, length 12.0111 mm
+    @(157.4800 mm, 71.1200 mm): PTH pad 5 [/3V3] of J4
+[clearance]: Clearance violation (netclass 'Default' clearance 0.2000 mm; actual 0.0760 mm)
+    Rule: netclass 'Default'; error
+    @(132.0800 mm, 71.1200 mm): PTH pad 5 [/D8] of J3
+    @(130.9040 mm, 62.1360 mm): Track [/3V3] on F.Cu, length 20.5080 mm
+[clearance]: Clearance violation (netclass 'Default' clearance 0.2000 mm; actual 0.0760 mm)
+    Rule: netclass 'Default'; error
+    @(158.6560 mm, 62.1360 mm): Track [/VIN] on F.Cu, length 12.0111 mm
+    @(157.4800 mm, 68.5800 mm): PTH pad 4 [/EN] of J4
+[clearance]: Clearance violation (netclass 'Default' clearance 0.2000 mm; actual 0.0760 mm)
+    Rule: netclass 'Default'; error
+    @(132.0800 mm, 81.2800 mm): PTH pad 9 [/GND] of J3
+    @(130.9040 mm, 62.1360 mm): Track [/3V3] on F.Cu, length 20.5080 mm
+[clearance]: Clearance violation (netclass 'Default' clearance 0.2000 mm; actual 0.1007 mm)
+    Rule: netclass 'Default'; error
+    @(152.5700 mm, 78.2800 mm): PTH pad 2 [/D3] of D1
+    @(156.9929 mm, 74.8360 mm): Track [/VIN] on F.Cu, length 4.5211 mm
+[clearance]: Clearance violation (netclass 'Default' clearance 0.2000 mm; actual 0.1729 mm)
+    Rule: netclass 'Default'; error
+    @(156.9929 mm, 74.8360 mm): Track [/VIN] on F.Cu, length 4.5211 mm
+    @(157.4800 mm, 73.6600 mm): PTH pad 6 [/GND] of J4
+[clearance]: Clearance violation (netclass 'Default' clearance 0.2000 mm; actual 0.0851 mm)
+    Rule: netclass 'Default'; error
+    @(132.0800 mm, 80.9585 mm): Track [/GND] on F.Cu, length 7.4670 mm
+    @(138.3700 mm, 76.5900 mm): PTH pad 1 [/D1] of U2
+[clearance]: Clearance violation (netclass 'Default' clearance 0.2000 mm; actual 0.0851 mm)
+    Rule: netclass 'Default'; error
+    @(138.3700 mm, 76.5900 mm): PTH pad 1 [/D1] of U2
+    @(137.3600 mm, 75.6785 mm): Track [/GND] on F.Cu, length 7.1785 mm
+[shorting_items]: Items shorting two nets (nets /D6 and /D5)
+    Local override; error
+    @(132.0800 mm, 76.2000 mm): Track [/D6] on F.Cu, length 2.5400 mm
+    @(132.0800 mm, 78.7400 mm): PTH pad 8 [/D5] of J3
+[hole_clearance]: Hole clearance violation (board setup constraints hole clearance 0.2500 mm; actual 0.0000 mm)
+    Rule: board setup constraints hole; error
+    @(132.0800 mm, 76.2000 mm): Track [/D6] on F.Cu, length 2.5400 mm
+    @(132.0800 mm, 78.7400 mm): PTH pad 8 [/D5] of J3
+[solder_mask_bridge]: Front solder mask aperture bridges items with different nets
+    Rule: board setup solder mask min width; error
+    @(132.0800 mm, 76.2000 mm): Track [/D6] on F.Cu, length 2.5400 mm
+    @(132.0800 mm, 78.7400 mm): PTH pad 8 [/D5] of J3
+
+** Found 0 unconnected pads **
+
+** Found 0 Footprint errors **
+
+** End of Report **
