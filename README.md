@@ -2,6 +2,8 @@
 
 An automated irrigation system using ESP8266 microcontrollers with soil moisture monitoring and intelligent watering control. Available in two versions: Basic IO and WiFi-enabled.
 
+> **Part of the BloomWatch ecosystem.** This firmware repo is one half of a two-repo project. The ESP8266 WiFi module collects soil moisture data and pushes it to Firebase Firestore, where the companion **[BloomWatch Web App](https://github.com/190-785/bloomwatch-webapp)** picks it up to display real-time dashboards, historical charts, and remote watering controls.
+
 ## Overview
 
 This project consists of two main components with increasing levels of functionality:
@@ -246,6 +248,31 @@ This project is licensed under the terms specified in the LICENSE file.
 - Designed for ESP8266 microcontrollers
 - Inspired by the need for automated plant care solutions
 - Firebase integration using Firebase Arduino Client Library
+
+## Companion Web App
+
+**Repository:** [github.com/190-785/bloomwatch-webapp](https://github.com/190-785/bloomwatch-webapp)
+
+The WiFi version of this firmware writes sensor data and pump status to Firebase Firestore under `plantData/{deviceId}`. The BloomWatch web app reads that same Firestore path to provide:
+
+- **Real-time dashboard** — live moisture levels, pump status, connection state
+- **Historical charts** — moisture trends over 24h / 7d / 30d
+- **Remote control** — water now, clear faults, adjust thresholds from anywhere
+- **Multi-device management** — monitor multiple plants from one interface
+- **User authentication** — secure, role-based access
+
+### How they connect
+
+```
+ESP8266 Firmware (this repo)        BloomWatch Web App
+─────────────────────────────       ──────────────────────
+Reads soil moisture sensor    ──►   Displays live readings
+Controls water pump           ◄──   Sends waterNow / clearFault commands
+Pushes logs to Firestore      ──►   Renders historical charts
+Pulls config from Firestore   ◄──   Lets users adjust thresholds
+```
+
+Both repos share the same Firebase project (`bloom-watch-d6878`) and Firestore data structure. See the [BloomWatch README](https://github.com/190-785/bloomwatch-webapp#readme) for web app setup.
 
 ---
 
